@@ -1,0 +1,9 @@
+{
+  "name": "@ai/utils",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "build": "echo \"Building utils (placeholder)\""
+  }
+}
