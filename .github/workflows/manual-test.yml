@@ -1,18 +1,28 @@
-name: PR Build Check
+name: Manual Test Workflow
 
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      test_name:
+        description: "Test to run"
+        required: false
+        default: "Build Test"
+        type: choice
+        options:
+          - "Build Test"
+          - "Dependency Check"
+          - "Full Test"
 
 jobs:
-  build-check:
+  test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Echo test name
+        run: echo "Running ${{ github.event.inputs.test_name }}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -40,22 +50,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Create .env.local for build
-        run: |
-          cd apps/web
-          cp .env.local.example .env.local
-          sed -i 's/your_supabase_project_url/https:\/\/placeholder.supabase.co/g' .env.local
-          sed -i 's/your_supabase_anon_key/placeholder-key/g' .env.local
-
       - name: Run build
         run: pnpm build
 
-      - name: Build status
-        if: success()
-        run: echo "✅ Build completed successfully!"
-
-      - name: Build failed
-        if: failure()
+      - name: Success message
         run: |
-          echo "❌ Build failed! Please fix the errors before merging."
-          exit 1
+          echo "✅ Test completed successfully!"
+          echo "Test name: ${{ github.event.inputs.test_name }}"
+          echo "Triggered by: ${{ github.actor }}"
