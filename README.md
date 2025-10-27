@@ -1,5 +1,7 @@
 # ai-video-generator (monorepo)
 
+[![PR Build Check](https://github.com/Soumyabrataop/fantastic-umbrella/actions/workflows/pr-check.yml/badge.svg)](https://github.com/Soumyabrataop/fantastic-umbrella/actions/workflows/pr-check.yml)
+
 This repository is initialized as a Turborepo monorepo using pnpm workspaces.
 
 Quick start (Windows cmd.exe):
