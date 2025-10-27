@@ -51,6 +51,7 @@ jobs:
           sed -i 's/your_supabase_anon_key/placeholder-key/g' .env.local
 
       - name: Run build
+        id: build
         run: pnpm build
 
       - name: Fetch Dependabot metadata
@@ -59,22 +60,22 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-approve PR
+      - name: Auto-approve Dependabot PR
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for Dependabot PRs
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
-        run: gh pr merge --auto --squash "$PR_URL"
+      - name: Merge Dependabot PR if build succeeded
+        if: steps.build.conclusion == 'success' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        run: gh pr merge "$PR_URL" --squash --admin
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Comment on PR
-        if: success()
+        if: steps.build.conclusion == 'success'
         uses: actions/github-script@v7
         with:
           script: |
@@ -82,5 +83,17 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ Build successful! This Dependabot PR will be auto-merged once all checks pass.'
+              body: '✅ Build successful! Dependabot PR has been merged automatically.'
+            })
+
+      - name: Comment on PR if build failed
+        if: steps.build.conclusion != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Build failed! Dependabot PR cannot be merged automatically. Please fix the errors.'
             })
