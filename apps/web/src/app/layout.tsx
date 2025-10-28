@@ -42,9 +42,7 @@ export default function RootLayout({
       >
         <QueryClientProvider client={queryClient}>
           <DesktopNav />
-          <div className="md:pl-20">
-            {children}
-          </div>
+          <div className="md:pl-20">{children}</div>
           <Navbar />
         </QueryClientProvider>
       </body>

@@ -2,14 +2,17 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { videoAPI, Video, FeedResponse } from "@/utils/api";
+import { useAuth } from "./useAuth";
 
 interface UseFeedOptions {
-  adsInterval?: number; // Insert ad every N videos (default: 2)
-  enableAds?: boolean; // Enable/disable ads (default: true)
+  adsInterval?: number; // Insert ad every N videos (default: disabled)
+  enableAds?: boolean; // Enable/disable ads (default: false)
+  limit?: number; // Videos per page (default: 10)
 }
 
 export function useFeed(options: UseFeedOptions = {}) {
-  const { adsInterval = 2, enableAds = true } = options;
+  const { adsInterval = 5, enableAds = false, limit = 10 } = options;
+  const { user } = useAuth();
 
   const {
     data,
@@ -26,19 +29,20 @@ export function useFeed(options: UseFeedOptions = {}) {
     string[],
     string | undefined
   >({
-    queryKey: ["feed"],
+    queryKey: user?.id ? ["feed", user.id] : ["feed"],
     queryFn: ({ pageParam }: { pageParam?: string }) =>
-      videoAPI.getFeed(pageParam, 10),
+      videoAPI.getFeed(pageParam, limit),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: FeedResponse) => {
       return lastPage.hasMore ? lastPage.nextCursor : undefined;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   // Flatten videos from all pages
   const videos = data?.pages.flatMap((page) => page.videos) ?? [];
 
-  // Insert ads based on configuration
+  // Insert ads based on configuration (disabled by default)
   const feedWithAds = enableAds ? insertAds(videos, adsInterval) : videos;
 
   return {
@@ -55,8 +59,10 @@ export function useFeed(options: UseFeedOptions = {}) {
 // Helper function to insert ads into video feed
 function insertAds(
   videos: Video[],
-  interval: number = 2
+  interval: number = 5
 ): (Video | { type: "ad"; id: string; position: number })[] {
+  if (!interval || interval <= 0) return videos;
+
   const feed: (Video | { type: "ad"; id: string; position: number })[] = [];
 
   videos.forEach((video, index) => {

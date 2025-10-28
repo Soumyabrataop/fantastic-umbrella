@@ -22,8 +22,8 @@ export default function DesktopNav() {
       color: "#FF006E",
     },
     {
-      name: "RANKS",
-      path: "/leaderboard",
+      name: "AUTH",
+      path: "/auth",
       icon: "★",
       color: "#FFBE0B",
     },

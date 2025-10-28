@@ -32,12 +32,12 @@ export default function CreatePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Temporarily disabled authentication for demo
-  // useEffect(() => {
-  //   if (!authLoading && !user) {
-  //     router.push('/');
-  //   }
-  // }, [user, authLoading, router]);
+  // Redirect to auth if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/auth");
+    }
+  }, [user, authLoading, router]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

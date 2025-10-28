@@ -7,19 +7,18 @@ import { useQuery } from "@tanstack/react-query";
 import { videoAPI, userAPI, Video, UserProfile } from "@/utils/api";
 import VideoCard from "@/components/VideoCard";
 import { useVideoActions } from "@/hooks/useVideoActions";
-import { auth } from "@/lib/supabase";
 import Loader from "@/components/Loader";
 
 export default function ProfilePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"videos" | "liked">("videos");
   const { recreateVideo } = useVideoActions();
 
-  // Redirect to home if not authenticated
+  // Redirect to auth if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push("/");
+      router.push("/auth");
     }
   }, [user, authLoading, router]);
 
@@ -52,9 +51,8 @@ export default function ProfilePage() {
     recreateVideo.mutate(videoId);
   };
 
-  const handleSignOut = async () => {
-    await auth.signOut();
-    router.push("/");
+  const handleSignOut = () => {
+    signOut();
   };
 
   if (authLoading || profileLoading) {
