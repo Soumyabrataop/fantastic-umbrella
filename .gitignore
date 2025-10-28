@@ -7,3 +7,8 @@ dist/
 .DS_Store
 npm-debug.log*
 *.log
+
+__pycache__/
+log*.txt
+cookie.json
+session_dump.json
