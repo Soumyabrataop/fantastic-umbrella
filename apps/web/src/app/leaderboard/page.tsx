@@ -44,8 +44,13 @@ export default function LeaderboardPage() {
 
   if (authLoading || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-[#1A1423] retro-scanlines">
+        <div className="text-center">
+          <div className="text-[#00F5FF] text-6xl mb-4 retro-glow font-['Press_Start_2P']">
+            ▓▓▓
+          </div>
+          <p className="text-[#9D4EDD] text-xl font-['VT323']">LOADING...</p>
+        </div>
       </div>
     );
   }
@@ -55,40 +60,76 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-[#1A1423] pb-24 retro-scanlines">
+      {/* Retro Grid Background */}
+      <div className="fixed inset-0 opacity-10">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+            linear-gradient(#9D4EDD 1px, transparent 1px),
+            linear-gradient(90deg, #9D4EDD 1px, transparent 1px)
+          `,
+            backgroundSize: "50px 50px",
+          }}
+        ></div>
+      </div>
+
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      <header
+        className="bg-[#240046] border-b-4 border-[#FFBE0B] sticky top-0 z-40"
+        style={{
+          boxShadow: "0 0 20px rgba(255, 190, 11, 0.5)",
+        }}
+      >
         <div className="max-w-5xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">
-            🏆 Creator Leaderboard
+          <h1
+            className="text-2xl font-['Press_Start_2P'] text-[#FFBE0B] retro-glow"
+            style={{ fontSize: "16px" }}
+          >
+            ★ LEADERBOARD ★
           </h1>
         </div>
       </header>
 
       {/* Ranking Formula Info */}
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <h3 className="font-semibold text-blue-900 mb-2">
-            📊 Ranking Formula
+      <div className="max-w-5xl mx-auto px-4 py-6 relative">
+        <div className="retro-card p-6 mb-6 bg-[#0D0221]">
+          <h3
+            className="font-['Press_Start_2P'] text-[#00F5FF] mb-4"
+            style={{ fontSize: "12px" }}
+          >
+            :: RANKING FORMULA ::
           </h3>
-          <div className="text-sm text-blue-800 space-y-1">
-            <p className="font-mono text-xs bg-blue-100 p-2 rounded">
-              Score = recently_active × 0.4 + num_videos × 0.3 + likes × 0.2 +
-              dislikes × 0.1
+          <div className="text-sm font-['VT323'] space-y-2">
+            <p className="text-[#FFBE0B] text-lg bg-[#240046] p-3 border-2 border-[#9D4EDD]">
+              SCORE = ACTIVE×40% + VIDEOS×30% + LIKES×20% + DISLIKES×10%
             </p>
-            <ul className="mt-3 space-y-1">
-              <li>
-                • <strong>40%</strong> - Recent activity (active = higher rank)
+            <ul className="mt-4 space-y-2 text-[#00F5FF] text-base">
+              <li className="flex items-start gap-2">
+                <span className="text-[#FF006E]">▶</span>
+                <span>
+                  <strong className="text-[#FFBE0B]">40%</strong> RECENT
+                  ACTIVITY
+                </span>
               </li>
-              <li>
-                • <strong>30%</strong> - Video count (prolific creators
-                rewarded)
+              <li className="flex items-start gap-2">
+                <span className="text-[#FF006E]">▶</span>
+                <span>
+                  <strong className="text-[#FFBE0B]">30%</strong> VIDEO COUNT
+                </span>
               </li>
-              <li>
-                • <strong>20%</strong> - Total likes (quality matters)
+              <li className="flex items-start gap-2">
+                <span className="text-[#FF006E]">▶</span>
+                <span>
+                  <strong className="text-[#FFBE0B]">20%</strong> TOTAL LIKES
+                </span>
               </li>
-              <li>
-                • <strong>10%</strong> - Total dislikes (engagement indicator)
+              <li className="flex items-start gap-2">
+                <span className="text-[#FF006E]">▶</span>
+                <span>
+                  <strong className="text-[#FFBE0B]">10%</strong> ENGAGEMENT
+                </span>
               </li>
             </ul>
           </div>
@@ -96,39 +137,83 @@ export default function LeaderboardPage() {
 
         {/* Leaderboard */}
         {rankedCreators.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg shadow-md">
-            <div className="text-6xl mb-4">🏆</div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-              No Creators Yet
-            </h2>
-            <p className="text-gray-600">
-              Be the first to create videos and climb the leaderboard!
-            </p>
+          <div className="text-center py-12">
+            <div className="retro-card p-8 max-w-md mx-auto">
+              <div
+                className="text-8xl mb-6 retro-glow"
+                style={{ color: "#FFBE0B" }}
+              >
+                ★
+              </div>
+              <h2
+                className="text-2xl font-['Press_Start_2P'] text-[#FF006E] mb-4"
+                style={{ fontSize: "14px" }}
+              >
+                NO CREATORS YET
+              </h2>
+              <p className="text-[#00F5FF] text-xl font-['VT323']">
+                Be the first to climb the ranks!
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {rankedCreators.map((creator, index) => (
               <div
                 key={creator.id}
-                className={`bg-white rounded-lg shadow-md p-4 flex items-center gap-4 ${
-                  index < 3 ? "border-2" : ""
-                } ${
+                className={`retro-card p-4 flex items-center gap-4 hover:scale-105 transition-transform ${
                   index === 0
-                    ? "border-yellow-400 bg-linear-to-r from-yellow-50 to-white"
+                    ? "border-[#FFBE0B]"
                     : index === 1
-                    ? "border-gray-400 bg-linear-to-r from-gray-50 to-white"
+                    ? "border-[#00F5FF]"
                     : index === 2
-                    ? "border-orange-400 bg-linear-to-r from-orange-50 to-white"
+                    ? "border-[#FF006E]"
                     : ""
                 }`}
+                style={{
+                  background:
+                    index < 3
+                      ? `linear-gradient(135deg, ${
+                          index === 0
+                            ? "#3C096C"
+                            : index === 1
+                            ? "#240046"
+                            : "#1A1423"
+                        } 0%, #0D0221 100%)`
+                      : undefined,
+                }}
               >
                 {/* Rank */}
-                <div className="shrink-0 w-12 text-center">
-                  {index === 0 && <div className="text-3xl">🥇</div>}
-                  {index === 1 && <div className="text-3xl">🥈</div>}
-                  {index === 2 && <div className="text-3xl">🥉</div>}
+                <div className="shrink-0 w-16 text-center">
+                  {index === 0 && (
+                    <div
+                      className="text-5xl retro-glow"
+                      style={{ color: "#FFBE0B" }}
+                    >
+                      ★
+                    </div>
+                  )}
+                  {index === 1 && (
+                    <div
+                      className="text-5xl retro-glow"
+                      style={{ color: "#00F5FF" }}
+                    >
+                      ★
+                    </div>
+                  )}
+                  {index === 2 && (
+                    <div
+                      className="text-5xl retro-glow"
+                      style={{ color: "#FF006E" }}
+                    >
+                      ★
+                    </div>
+                  )}
                   {index > 2 && (
-                    <div className="text-xl font-bold text-gray-600">
+                    <div
+                      className="text-2xl font-['Press_Start_2P'] text-[#9D4EDD]"
+                      style={{ fontSize: "14px" }}
+                    >
                       #{index + 1}
                     </div>
                   )}
@@ -136,7 +221,14 @@ export default function LeaderboardPage() {
 
                 {/* Avatar */}
                 <div className="shrink-0">
-                  <div className="w-16 h-16 bg-linear-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                  <div
+                    className="w-16 h-16 pixel-corners retro-card flex items-center justify-center text-[#00F5FF] text-2xl font-['Press_Start_2P']"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #FF006E 0%, #9D4EDD 100%)",
+                      boxShadow: "0 0 15px rgba(0, 245, 255, 0.5)",
+                    }}
+                  >
                     {creator.username?.[0]?.toUpperCase() ||
                       creator.email[0].toUpperCase()}
                   </div>
@@ -144,55 +236,51 @@ export default function LeaderboardPage() {
 
                 {/* Creator Info */}
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 text-lg">
+                  <h3
+                    className="font-['Press_Start_2P'] text-[#00F5FF] text-lg mb-2"
+                    style={{ fontSize: "12px" }}
+                  >
                     {creator.username || creator.email.split("@")[0]}
                   </h3>
-                  <div className="flex gap-4 text-sm text-gray-600 mt-1">
-                    <span>📹 {creator.videosCreated} videos</span>
-                    <span>👍 {creator.totalLikes} likes</span>
+                  <div className="flex gap-4 font-['VT323'] text-base">
+                    <span className="text-[#FFBE0B]">
+                      ◈ {creator.videosCreated}
+                    </span>
+                    <span className="text-[#06FFA5]">
+                      ▲ {creator.totalLikes}
+                    </span>
                     {creator.totalDislikes && creator.totalDislikes > 0 && (
-                      <span>👎 {creator.totalDislikes}</span>
+                      <span className="text-[#FF006E]">
+                        ▼ {creator.totalDislikes}
+                      </span>
                     )}
                   </div>
                 </div>
 
                 {/* Score */}
-                <div className="shrink-0 text-right">
-                  <div className="text-2xl font-bold text-blue-600">
+                <div className="shrink-0 text-right retro-card p-3 bg-[#0D0221]">
+                  <div
+                    className="text-3xl font-['Press_Start_2P'] retro-glow"
+                    style={{
+                      color:
+                        index === 0
+                          ? "#FFBE0B"
+                          : index === 1
+                          ? "#00F5FF"
+                          : index === 2
+                          ? "#FF006E"
+                          : "#9D4EDD",
+                      fontSize: "16px",
+                    }}
+                  >
                     {creator.score.toFixed(1)}
                   </div>
-                  <div className="text-xs text-gray-500">score</div>
+                  <div className="text-xs font-['VT323'] text-[#9D4EDD]">
+                    SCORE
+                  </div>
                 </div>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* Example Calculation */}
-        {rankedCreators.length > 0 && (
-          <div className="mt-8 bg-white rounded-lg shadow-md p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">
-              💡 Example Score Calculation
-            </h3>
-            <div className="text-sm text-gray-600 space-y-2">
-              <p>
-                For top creator{" "}
-                <strong>{rankedCreators[0].username || "User"}</strong>:
-              </p>
-              <ul className="list-disc list-inside space-y-1 ml-4">
-                <li>Recent activity component: varies by last active time</li>
-                <li>Video count: {rankedCreators[0].videosCreated} videos</li>
-                <li>Like count: {rankedCreators[0].totalLikes} likes</li>
-                <li>
-                  Dislike count: {rankedCreators[0].totalDislikes || 0} dislikes
-                </li>
-              </ul>
-              <p className="pt-2 border-t border-gray-200">
-                <strong>
-                  Final Score: {rankedCreators[0].score.toFixed(1)}
-                </strong>
-              </p>
-            </div>
           </div>
         )}
       </div>

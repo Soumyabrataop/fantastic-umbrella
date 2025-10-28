@@ -57,9 +57,18 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden mb-4 max-w-md mx-auto">
+    <div className="retro-card overflow-hidden mb-6 max-w-md mx-auto relative">
+      {/* Scanlines overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none z-10"
+        style={{
+          background:
+            "repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 2px)",
+        }}
+      ></div>
+
       {/* Video Player */}
-      <div className="relative aspect-9/16 bg-black">
+      <div className="relative aspect-9/16 bg-[#0D0221] border-4 border-[#9D4EDD]">
         {video.status === "completed" ? (
           <video
             ref={videoRef}
@@ -69,6 +78,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
             playsInline
             muted
             className="w-full h-full object-contain"
+            style={{ imageRendering: "pixelated" }}
             onClick={() => {
               if (videoRef.current) {
                 if (isPlaying) {
@@ -83,12 +93,14 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
           />
         ) : (
           <div className="flex items-center justify-center h-full">
-            <div className="text-center text-white">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-              <p className="text-sm">
-                {video.status === "pending" && "Waiting in queue..."}
-                {video.status === "processing" && "Generating video..."}
-                {video.status === "failed" && "Failed to generate"}
+            <div className="text-center">
+              <div className="text-[#00F5FF] text-6xl mb-4 retro-glow font-['Press_Start_2P']">
+                ▓▓▓
+              </div>
+              <p className="text-[#FFBE0B] text-xl font-['VT323']">
+                {video.status === "pending" && "QUEUE..."}
+                {video.status === "processing" && "GENERATING..."}
+                {video.status === "failed" && "ERROR!"}
               </p>
             </div>
           </div>
@@ -97,98 +109,83 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
         {/* Play/Pause Overlay */}
         {video.status === "completed" && !isPlaying && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-black bg-opacity-50 rounded-full p-4">
-              <svg
-                className="w-12 h-12 text-white"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-              </svg>
+            <div
+              className="bg-[#240046] border-4 border-[#00F5FF] p-4 pixel-corners"
+              style={{
+                boxShadow: "0 0 20px rgba(0, 245, 255, 0.5)",
+              }}
+            >
+              <div className="text-[#00F5FF] text-5xl retro-glow">▶</div>
             </div>
           </div>
         )}
       </div>
 
       {/* Video Info */}
-      <div className="p-4">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1">
-            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">
-              {video.prompt}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {video.username || "Anonymous"} • {formatViews(video.views)} views
-              • {formatTimeAgo(video.createdAt)}
+      <div className="p-4 bg-linear-to-b from-[#240046] to-[#3C096C]">
+        <div className="mb-3">
+          <div className="retro-input p-3 mb-2">
+            <p className="text-[#00F5FF] text-lg font-['VT323'] line-clamp-3">
+              &gt; {video.prompt}
             </p>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[#FFBE0B] font-['VT323'] text-base">
+              ◉ {video.username || "ANON"}
+            </span>
+            <span className="text-[#9D4EDD] font-['VT323'] text-base">
+              👁 {formatViews(video.views)} • {formatTimeAgo(video.createdAt)}
+            </span>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-around pt-4 border-t border-gray-200">
+        <div className="grid grid-cols-4 gap-2 pt-3 border-t-2 border-[#9D4EDD]">
           {/* Like Button */}
           <button
             onClick={handleLike}
             disabled={likeVideo.isPending}
-            className="flex flex-col items-center gap-1 hover:text-blue-600 transition-colors disabled:opacity-50"
+            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform disabled:opacity-50 p-2 bg-[#0D0221] border-2 border-[#06FFA5]"
+            style={{
+              boxShadow: "0 0 10px rgba(6, 255, 165, 0.3)",
+            }}
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"
-              />
-            </svg>
-            <span className="text-xs">{video.likes}</span>
+            <span className="text-2xl text-[#06FFA5] retro-glow">▲</span>
+            <span className="text-xs text-[#06FFA5] font-['VT323']">
+              {video.likes}
+            </span>
           </button>
 
           {/* Dislike Button */}
           <button
             onClick={handleDislike}
             disabled={dislikeVideo.isPending}
-            className="flex flex-col items-center gap-1 hover:text-red-600 transition-colors disabled:opacity-50"
+            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform disabled:opacity-50 p-2 bg-[#0D0221] border-2 border-[#FF006E]"
+            style={{
+              boxShadow: "0 0 10px rgba(255, 0, 110, 0.3)",
+            }}
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"
-              />
-            </svg>
-            <span className="text-xs">{video.dislikes}</span>
+            <span className="text-2xl text-[#FF006E] retro-glow">▼</span>
+            <span className="text-xs text-[#FF006E] font-['VT323']">
+              {video.dislikes}
+            </span>
           </button>
 
           {/* Recreate Button */}
           <button
             onClick={handleRecreate}
-            className="flex flex-col items-center gap-1 hover:text-green-600 transition-colors"
+            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform p-2 bg-[#0D0221] border-2 border-[#FFBE0B]"
+            style={{
+              boxShadow: "0 0 10px rgba(255, 190, 11, 0.3)",
+            }}
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+            <span className="text-2xl text-[#FFBE0B] retro-glow">↻</span>
+            <span
+              className="text-xs text-[#FFBE0B] font-['VT323']"
+              style={{ fontSize: "10px" }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-              />
-            </svg>
-            <span className="text-xs">Recreate</span>
+              RE
+            </span>
           </button>
 
           {/* Share Button */}
@@ -198,22 +195,18 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
                 `${window.location.origin}/video/${video.id}`
               );
             }}
-            className="flex flex-col items-center gap-1 hover:text-purple-600 transition-colors"
+            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform p-2 bg-[#0D0221] border-2 border-[#00F5FF]"
+            style={{
+              boxShadow: "0 0 10px rgba(0, 245, 255, 0.3)",
+            }}
           >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+            <span className="text-2xl text-[#00F5FF] retro-glow">⚡</span>
+            <span
+              className="text-xs text-[#00F5FF] font-['VT323']"
+              style={{ fontSize: "10px" }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-              />
-            </svg>
-            <span className="text-xs">Share</span>
+              SH
+            </span>
           </button>
         </div>
       </div>
