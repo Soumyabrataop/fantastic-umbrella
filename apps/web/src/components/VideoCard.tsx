@@ -22,11 +22,20 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
         if (entry.isIntersecting) {
           trackView.mutate(video.id);
           if (videoRef.current) {
-            videoRef.current.play();
-            setIsPlaying(true);
+            const playPromise = videoRef.current.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  setIsPlaying(true);
+                })
+                .catch((error) => {
+                  console.log("Auto-play prevented:", error);
+                  setIsPlaying(false);
+                });
+            }
           }
         } else {
-          if (videoRef.current) {
+          if (videoRef.current && !videoRef.current.paused) {
             videoRef.current.pause();
             setIsPlaying(false);
           }
@@ -69,7 +78,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
 
       {/* Video Player */}
       <div className="relative aspect-9/16 bg-[#0D0221] border-4 border-[#9D4EDD]">
-        {video.status === "completed" ? (
+        {video.status === "completed" && video.videoUrl ? (
           <video
             ref={videoRef}
             src={video.videoUrl}
@@ -79,14 +88,26 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
             muted
             className="w-full h-full object-contain"
             style={{ imageRendering: "pixelated" }}
+            onError={(e) => {
+              console.error("Video failed to load:", video.videoUrl, e);
+            }}
             onClick={() => {
               if (videoRef.current) {
                 if (isPlaying) {
                   videoRef.current.pause();
                   setIsPlaying(false);
                 } else {
-                  videoRef.current.play();
-                  setIsPlaying(true);
+                  const playPromise = videoRef.current.play();
+                  if (playPromise !== undefined) {
+                    playPromise
+                      .then(() => {
+                        setIsPlaying(true);
+                      })
+                      .catch((error) => {
+                        console.log("Play prevented:", error);
+                        setIsPlaying(false);
+                      });
+                  }
                 }
               }
             }}
@@ -140,52 +161,76 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-4 gap-2 pt-3 border-t-2 border-[#9D4EDD]">
+        <div className="flex gap-2 pt-3 border-t-2 border-[#9D4EDD]">
           {/* Like Button */}
           <button
             onClick={handleLike}
             disabled={likeVideo.isPending}
-            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform disabled:opacity-50 p-2 bg-[#0D0221] border-2 border-[#06FFA5]"
+            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all disabled:opacity-50"
             style={{
-              boxShadow: "0 0 10px rgba(6, 255, 165, 0.3)",
+              fontFamily: "Google Sans Text",
+              fontSize: "0.75rem",
+              fontStyle: "normal",
+              fontWeight: 500,
+              lineHeight: "1rem",
+              backdropFilter: "blur(0px) opacity(10%)",
+              color: "rgb(255, 255, 255)",
+              whiteSpace: "nowrap",
+              height: "2rem",
+              padding: "0rem 0.875rem 0rem 0.875rem",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "4px",
             }}
           >
-            <span className="text-2xl text-[#06FFA5] retro-glow">▲</span>
-            <span className="text-xs text-[#06FFA5] font-['VT323']">
-              {video.likes}
-            </span>
+            <span className="text-lg">👍</span>
+            <span>{video.likes}</span>
           </button>
 
           {/* Dislike Button */}
           <button
             onClick={handleDislike}
             disabled={dislikeVideo.isPending}
-            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform disabled:opacity-50 p-2 bg-[#0D0221] border-2 border-[#FF006E]"
+            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all disabled:opacity-50"
             style={{
-              boxShadow: "0 0 10px rgba(255, 0, 110, 0.3)",
+              fontFamily: "Google Sans Text",
+              fontSize: "0.75rem",
+              fontStyle: "normal",
+              fontWeight: 500,
+              lineHeight: "1rem",
+              backdropFilter: "blur(0px) opacity(10%)",
+              color: "rgb(255, 255, 255)",
+              whiteSpace: "nowrap",
+              height: "2rem",
+              padding: "0rem 0.875rem 0rem 0.875rem",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "4px",
             }}
           >
-            <span className="text-2xl text-[#FF006E] retro-glow">▼</span>
-            <span className="text-xs text-[#FF006E] font-['VT323']">
-              {video.dislikes}
-            </span>
+            <span className="text-lg">👎</span>
+            <span>{video.dislikes}</span>
           </button>
 
           {/* Recreate Button */}
           <button
             onClick={handleRecreate}
-            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform p-2 bg-[#0D0221] border-2 border-[#FFBE0B]"
+            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all"
             style={{
-              boxShadow: "0 0 10px rgba(255, 190, 11, 0.3)",
+              fontFamily: "Google Sans Text",
+              fontSize: "0.75rem",
+              fontStyle: "normal",
+              fontWeight: 500,
+              lineHeight: "1rem",
+              backdropFilter: "blur(0px) opacity(10%)",
+              color: "rgb(255, 255, 255)",
+              whiteSpace: "nowrap",
+              height: "2rem",
+              padding: "0rem 0.875rem 0rem 0.875rem",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "4px",
             }}
           >
-            <span className="text-2xl text-[#FFBE0B] retro-glow">↻</span>
-            <span
-              className="text-xs text-[#FFBE0B] font-['VT323']"
-              style={{ fontSize: "10px" }}
-            >
-              RE
-            </span>
+            <span className="text-lg">🔄</span>
+            <span>Recreate</span>
           </button>
 
           {/* Share Button */}
@@ -195,18 +240,24 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
                 `${window.location.origin}/video/${video.id}`
               );
             }}
-            className="flex flex-col items-center gap-1 hover:scale-110 transition-transform p-2 bg-[#0D0221] border-2 border-[#00F5FF]"
+            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all"
             style={{
-              boxShadow: "0 0 10px rgba(0, 245, 255, 0.3)",
+              fontFamily: "Google Sans Text",
+              fontSize: "0.75rem",
+              fontStyle: "normal",
+              fontWeight: 500,
+              lineHeight: "1rem",
+              backdropFilter: "blur(0px) opacity(10%)",
+              color: "rgb(255, 255, 255)",
+              whiteSpace: "nowrap",
+              height: "2rem",
+              padding: "0rem 0.875rem 0rem 0.875rem",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "4px",
             }}
           >
-            <span className="text-2xl text-[#00F5FF] retro-glow">⚡</span>
-            <span
-              className="text-xs text-[#00F5FF] font-['VT323']"
-              style={{ fontSize: "10px" }}
-            >
-              SH
-            </span>
+            <span className="text-lg">📤</span>
+            <span>Share</span>
           </button>
         </div>
       </div>

@@ -36,7 +36,7 @@ export default function Navbar() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[#240046] border-t-4 border-[#9D4EDD] shadow-[0_0_20px_rgba(157,78,221,0.5)] z-50">
+    <nav className="fixed bottom-0 left-0 right-0 bg-[#240046] border-t-4 border-[#9D4EDD] shadow-[0_0_20px_rgba(157,78,221,0.5)] z-50 md:hidden">
       <div className="max-w-5xl mx-auto">
         <div className="flex justify-around items-center h-20">
           {navItems.map((item) => {

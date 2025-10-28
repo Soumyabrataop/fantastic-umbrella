@@ -8,6 +8,7 @@ import { videoAPI, userAPI, Video, UserProfile } from "@/utils/api";
 import VideoCard from "@/components/VideoCard";
 import { useVideoActions } from "@/hooks/useVideoActions";
 import { auth } from "@/lib/supabase";
+import Loader from "@/components/Loader";
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
@@ -57,16 +58,7 @@ export default function ProfilePage() {
   };
 
   if (authLoading || profileLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#1A1423] retro-scanlines">
-        <div className="text-center">
-          <div className="text-[#00F5FF] text-6xl mb-4 retro-glow font-['Press_Start_2P']">
-            ▓▓▓
-          </div>
-          <p className="text-[#9D4EDD] text-xl font-['VT323']">LOADING...</p>
-        </div>
-      </div>
-    );
+    return <Loader message="LOADING PROFILE..." />;
   }
 
   if (!user) {

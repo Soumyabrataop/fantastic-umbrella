@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { userAPI, UserProfile } from "@/utils/api";
 import { calculateCreatorRankingScore } from "@/utils/ranking";
+import Loader from "@/components/Loader";
 
 export default function LeaderboardPage() {
   const { user, loading: authLoading } = useAuth();
@@ -43,16 +44,7 @@ export default function LeaderboardPage() {
     .sort((a, b) => b.score - a.score);
 
   if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#1A1423] retro-scanlines">
-        <div className="text-center">
-          <div className="text-[#00F5FF] text-6xl mb-4 retro-glow font-['Press_Start_2P']">
-            ▓▓▓
-          </div>
-          <p className="text-[#9D4EDD] text-xl font-['VT323']">LOADING...</p>
-        </div>
-      </div>
-    );
+    return <Loader message="LOADING RANKS..." />;
   }
 
   if (!user) {
