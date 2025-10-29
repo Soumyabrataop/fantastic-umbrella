@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from app.api.routes import router
 from app.core.settings import get_settings
+from app.db.session import init_database
 from app.services.token_refresher import SessionData, TokenRefresher, seconds_until_expiry
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(refresh_loop())
     try:
+        await init_database()
         yield
     finally:
         stop_event.set()
