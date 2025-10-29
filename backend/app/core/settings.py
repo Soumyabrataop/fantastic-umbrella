@@ -24,6 +24,7 @@ class Settings:
     flow_project_id: str
     flow_default_video_model: str
     flow_default_aspect_ratio: str
+    flow_user_paygate_tier: str
     flow_cookie_file: Path
     token_refresh_margin_seconds: int
     supabase_url: str
@@ -95,8 +96,9 @@ def get_settings() -> Settings:
         flow_generate_url=_get_env("FLOW_API_GENERATE_URL"),
         flow_status_url=_get_env("FLOW_API_STATUS_URL"),
         flow_project_id=_get_env("FLOW_PROJECT_ID"),
-        flow_default_video_model=os.environ.get("FLOW_DEFAULT_VIDEO_MODEL", "veo_3_1_t2v_fast_portrait"),
+        flow_default_video_model=os.environ.get("FLOW_DEFAULT_VIDEO_MODEL", "veo_3_1_t2v_fast_portrait_ultra"),
         flow_default_aspect_ratio=os.environ.get("FLOW_DEFAULT_ASPECT_RATIO", "VIDEO_ASPECT_RATIO_PORTRAIT"),
+        flow_user_paygate_tier=os.environ.get("FLOW_USER_PAYGATE_TIER", "PAYGATE_TIER_NOT_PAID"),
         flow_cookie_file=Path(cookie_path),
         token_refresh_margin_seconds=margin,
         supabase_url=supabase_url,

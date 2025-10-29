@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, inspect, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -513,7 +513,15 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
     else:
         ranking_score = float(video.ranking_score) if isinstance(video.ranking_score, Decimal) else video.ranking_score
 
-    assets = [_serialize_asset(asset) for asset in getattr(video, "assets", [])]
+    assets: list[VideoAssetRead] = []
+    try:
+        state = inspect(video)
+    except Exception:  # noqa: BLE001 - fallback when instance inspection is unavailable
+        state = None
+
+    if state is None or "assets" not in getattr(state, "unloaded", set()):
+        raw_assets = getattr(video, "assets", None) or []
+        assets = [_serialize_asset(asset) for asset in raw_assets]
 
     return VideoRead(
         id=video.id,

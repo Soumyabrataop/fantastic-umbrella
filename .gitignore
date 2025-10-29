@@ -12,3 +12,7 @@ __pycache__/
 log*.txt
 cookie.json
 session_dump.json
+media/
+flow_meta.json
+gen.json
+

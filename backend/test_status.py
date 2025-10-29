@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-DEFAULT_METADATA = Path("last_generation.json")
+DEFAULT_METADATA = Path("flow_meta.json")
 
 
 def parse_args() -> argparse.Namespace:

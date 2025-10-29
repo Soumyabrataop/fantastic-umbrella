@@ -91,8 +91,12 @@ class VideoQueue:
             profile = await self._ensure_profile(session, video.user_id)
 
             try:
-                await self._begin_generation(session, video, profile)
-                await self._run_generation(session, video, job.scene_id)
+                try:
+                    await self._begin_generation(session, video, profile)
+                    await self._run_generation(session, video, job.scene_id)
+                except Exception:
+                    await session.rollback()
+                    raise
             except Exception as exc:  # noqa: BLE001
                 await self._mark_failed(session, video, reason=str(exc))
                 raise
@@ -114,8 +118,21 @@ class VideoQueue:
         )
 
         response = await self._flow_client.generate_video(generate_request)
+        if response is None:
+            logger.error(
+                "Flow generate_video returned no payload",
+                extra={"video_id": str(video.id)},
+            )
+            raise RuntimeError("Flow response missing operation name")
+
         operation_name = self._extract_operation_name(response)
         if not operation_name:
+            logger.error(
+                "Flow response missing operation name for video %s: %s",
+                video.id,
+                response,
+                extra={"video_id": str(video.id), "response": response},
+            )
             raise RuntimeError("Flow response missing operation name")
         video.operation_name = operation_name
         await session.commit()
@@ -190,15 +207,27 @@ class VideoQueue:
             return None
         operations = response.get("operations")
         if not isinstance(operations, list) or not operations:
-            return None
+            single = response.get("operation")
+            if isinstance(single, dict):
+                name = single.get("name")
+                if isinstance(name, str):
+                    return name
+            if isinstance(single, str):
+                return single
+            name = response.get("name")
+            return name if isinstance(name, str) else None
         first = operations[0]
         if not isinstance(first, dict):
-            return None
+            return str(first) if isinstance(first, str) else None
         operation = first.get("operation")
-        if not isinstance(operation, dict):
-            return None
-        name = operation.get("name")
-        return str(name) if isinstance(name, str) else None
+        if isinstance(operation, dict):
+            name = operation.get("name")
+            if isinstance(name, str):
+                return name
+        if isinstance(operation, str):
+            return operation
+        name = first.get("name")
+        return name if isinstance(name, str) else None
 
 
 def get_video_queue(request: Request) -> VideoQueue:

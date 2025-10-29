@@ -22,6 +22,8 @@ _STATUS_MAP: dict[str, VideoStatus] = {
     "MEDIA_GENERATION_STATUS_SCHEDULED": VideoStatus.PENDING,
     "MEDIA_GENERATION_STATUS_RUNNING": VideoStatus.PROCESSING,
     "MEDIA_GENERATION_STATUS_PROCESSING": VideoStatus.PROCESSING,
+    "MEDIA_GENERATION_STATUS_ACTIVE": VideoStatus.PROCESSING,
+    "MEDIA_GENERATION_STATUS_SUCCESSFUL": VideoStatus.COMPLETED,
     "MEDIA_GENERATION_STATUS_COMPLETED": VideoStatus.COMPLETED,
     "MEDIA_GENERATION_STATUS_FAILED": VideoStatus.FAILED,
     "STATE_PENDING": VideoStatus.PENDING,
@@ -194,7 +196,7 @@ def _looks_like_video_url(key: str, value: str) -> bool:
     if any(suffix.endswith(ext) for ext in (".mp4", ".webm", ".mov", ".mkv", ".gif")):
         return True
 
-    if key in {"downloadurl", "videourl", "signedurl", "url"}:
+    if key in {"downloadurl", "videourl", "signedurl", "url", "fifeurl"}:
         return True
 
     return False
@@ -209,7 +211,7 @@ def _looks_like_thumbnail_url(key: str, value: str) -> bool:
     if any(suffix.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
         return True
 
-    if key in {"thumbnailurl", "posterurl", "previewurl"}:
+    if key in {"thumbnailurl", "posterurl", "previewurl", "servingbaseuri"}:
         return True
 
     return False
