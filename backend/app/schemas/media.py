@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import ReactionType, VideoStatus
+from app.db.models import AssetType, ReactionType, VideoStatus
 
 
 class VideoCreateRequest(BaseModel):
@@ -17,6 +17,28 @@ class VideoCreateRequest(BaseModel):
     seed: int | None = None
     scene_id: str | None = Field(None, alias="sceneId")
     source_video_id: uuid.UUID | None = Field(None, alias="sourceVideoId")
+
+
+class VideoStatusSyncRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    operation_name: str | None = Field(None, alias="operationName")
+    scene_id: str | None = Field(None, alias="sceneId")
+
+
+class VideoAssetRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+    id: uuid.UUID
+    asset_type: AssetType = Field(..., alias="assetType")
+    storage_backend: str = Field(..., alias="storageBackend")
+    storage_key: str | None = Field(None, alias="storageKey")
+    file_path: str | None = Field(None, alias="filePath")
+    public_url: str | None = Field(None, alias="publicUrl")
+    source_url: str | None = Field(None, alias="sourceUrl")
+    duration_seconds: int | None = Field(None, alias="durationSeconds")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
 
 
 class VideoRead(BaseModel):
@@ -34,6 +56,7 @@ class VideoRead(BaseModel):
     created_at: datetime = Field(..., alias="createdAt")
     status: VideoStatus
     ranking_score: float | None = Field(None, alias="rankingScore")
+    assets: list[VideoAssetRead] = Field(default_factory=list)
 
 
 class FeedResponse(BaseModel):

@@ -50,6 +50,11 @@ class ReactionType(str, enum.Enum):
     DISLIKE = "dislike"
 
 
+class AssetType(str, enum.Enum):
+    VIDEO = "video"
+    THUMBNAIL = "thumbnail"
+
+
 class Video(Base, TimestampMixin):
     __tablename__ = "videos"
 
@@ -58,7 +63,12 @@ class Video(Base, TimestampMixin):
         primary_key=True,
         default=uuid.uuid4,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     video_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -91,6 +101,11 @@ class Video(Base, TimestampMixin):
         back_populates="videos",
         primaryjoin="Video.user_id==Profile.id",
         viewonly=True,
+    )
+    assets: Mapped[list["VideoAsset"]] = relationship(
+        "VideoAsset",
+        back_populates="video",
+        cascade="all, delete-orphan",
     )
 
 
@@ -157,3 +172,30 @@ class Profile(Base, TimestampMixin):
         cascade="all, delete-orphan",
         primaryjoin="Profile.id==Video.user_id",
     )
+
+
+class VideoAsset(Base, TimestampMixin):
+    __tablename__ = "video_assets"
+    __table_args__ = (
+        UniqueConstraint("video_id", "asset_type", name="uq_video_assets_video_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    video_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("videos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    asset_type: Mapped[AssetType] = mapped_column(
+        Enum(AssetType, name="video_asset_type_enum", native_enum=False),
+        nullable=False,
+    )
+    storage_backend: Mapped[str] = mapped_column(String(32), nullable=False)
+    storage_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    public_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    video: Mapped[Video] = relationship(back_populates="assets")

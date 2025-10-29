@@ -6,15 +6,17 @@ from decimal import Decimal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, inspect, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.settings import get_settings
 from app.db.models import (
     Profile,
     ReactionType,
     Video,
+    VideoAsset,
     VideoReaction,
     VideoStatus,
     VideoView,
@@ -28,8 +30,10 @@ from app.schemas.media import (
     ProfileUpdateRequest,
     ReactionResponse,
     TrackViewResponse,
+    VideoAssetRead,
     VideoCreateRequest,
     VideoRead,
+    VideoStatusSyncRequest,
 )
 from app.schemas.video import (
     CheckVideoStatusRequest,
@@ -39,10 +43,15 @@ from app.schemas.video import (
 )
 from app.services.auth import AuthenticatedUser, get_current_user
 from app.services.flow_client import FlowClient
+from app.services.security import require_signed_request
+from app.services.storage import StorageService
+from app.services.video_queue import VideoJob, VideoQueue, get_video_queue
+from app.utils.flow_status import parse_flow_status
 from app.utils.ranking import calculate_creator_score, calculate_ranking_score
 
 router = APIRouter()
 flow_client = FlowClient()
+storage_service = StorageService()
 
 
 @router.get("/health")
@@ -105,61 +114,20 @@ async def generation_status(payload: CheckVideoStatusRequest) -> CheckVideoStatu
 @router.post("/videos/create", response_model=VideoRead, status_code=status.HTTP_201_CREATED)
 async def create_video(
     payload: VideoCreateRequest,
+    queue: VideoQueue = Depends(get_video_queue),
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
-    scene_id = payload.scene_id or str(uuid.uuid4())
-
-    video = Video(
-        user_id=user.id,
-        prompt=payload.prompt,
-        status=VideoStatus.PENDING,
-        aspect_ratio=payload.aspect_ratio,
-        model_key=payload.video_model_key,
-        seed=payload.seed,
-        scene_id=scene_id,
-        source_video_id=payload.source_video_id,
-    )
-    session.add(video)
-    await session.flush()
-
-    profile = await _ensure_profile(session, user.id, user.email)
-
-    try:
-        flow_request = GenerateVideoRequest(
-            prompt=payload.prompt,
-            aspect_ratio=payload.aspect_ratio,
-            video_model_key=payload.video_model_key,
-            seed=payload.seed,
-            scene_id=scene_id,
-        )
-        response = await flow_client.generate_video(flow_request)
-        operation_name = _extract_operation_name(response)
-        if not operation_name:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Flow did not return an operation name")
-        video.operation_name = operation_name
-        video.status = VideoStatus.PROCESSING
-    except HTTPException:
-        video.status = VideoStatus.FAILED
-        video.failure_reason = "Failed to enqueue generation"
-        raise
-    except Exception as exc:  # noqa: BLE001 - broad by design to capture any upstream failure
-        video.status = VideoStatus.FAILED
-        video.failure_reason = str(exc)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Video generation failed") from exc
-    finally:
-        if video.status != VideoStatus.FAILED:
-            profile.videos_created += 1
-        profile.last_active_at = datetime.now(timezone.utc)
-        video.ranking_score = calculate_ranking_score(video)
-        await session.flush()
-
+    video, profile = await _create_and_enqueue_video(session, payload, user, queue)
     return _serialize_video(video, creator=profile)
 
 
 @router.post("/videos/{video_id}/recreate", response_model=VideoRead, status_code=status.HTTP_201_CREATED)
 async def recreate_video(
     video_id: uuid.UUID,
+    queue: VideoQueue = Depends(get_video_queue),
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
@@ -172,7 +140,68 @@ async def recreate_video(
         sceneId=None,
         sourceVideoId=original.id,
     )
-    return await create_video(payload, user=user, session=session)
+    video, profile = await _create_and_enqueue_video(session, payload, user, queue)
+    return _serialize_video(video, creator=profile)
+
+
+@router.post("/videos/{video_id}/sync-status", response_model=VideoRead)
+async def sync_video_status(
+    video_id: uuid.UUID,
+    payload: VideoStatusSyncRequest | None = None,
+    _: None = Depends(require_signed_request),
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> VideoRead:
+    video = await _get_video(session, video_id)
+
+    if video.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can sync this video")
+
+    if payload:
+        if payload.operation_name:
+            video.operation_name = payload.operation_name
+        if payload.scene_id:
+            video.scene_id = payload.scene_id
+
+    if not video.operation_name or not video.scene_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video is missing Flow metadata for polling")
+
+    try:
+        response = await flow_client.check_video_status(
+            CheckVideoStatusRequest(
+                operationName=video.operation_name,
+                sceneId=video.scene_id,
+            )
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = _extract_error_detail(exc)
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - upstream resilience
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to poll Flow status") from exc
+
+    update = parse_flow_status(response)
+    if update.status is not None:
+        video.status = update.status
+    if update.failure_reason:
+        video.failure_reason = update.failure_reason
+    if update.video_url:
+        video.video_url = update.video_url
+    if update.thumbnail_url:
+        video.thumbnail_url = update.thumbnail_url
+    if update.duration_seconds is not None:
+        video.duration_seconds = update.duration_seconds
+
+    await storage_service.handle_status_update(session, video, update)
+
+    video.ranking_score = calculate_ranking_score(video)
+
+    owner_profile = await _ensure_profile(session, video.user_id)
+    owner_profile.last_active_at = datetime.now(timezone.utc)
+
+    await session.flush()
+    return _serialize_video(video, creator=owner_profile)
 
 
 @router.get("/videos/feed", response_model=FeedResponse)
@@ -184,7 +213,10 @@ async def get_feed(
     ranking_expr = func.coalesce(Video.ranking_score, 0.0)
     query = (
         select(Video)
-        .options(selectinload(Video.creator))
+        .options(
+            selectinload(Video.creator),
+            selectinload(Video.assets),
+        )
         .where(Video.status == VideoStatus.COMPLETED)
         .order_by(ranking_expr.desc(), Video.created_at.desc(), Video.id.desc())
     )
@@ -229,6 +261,7 @@ async def get_video_detail(
 @router.post("/videos/{video_id}/like", response_model=ReactionResponse)
 async def like_video(
     video_id: uuid.UUID,
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ReactionResponse:
@@ -265,6 +298,7 @@ async def like_video(
 @router.post("/videos/{video_id}/dislike", response_model=ReactionResponse)
 async def dislike_video(
     video_id: uuid.UUID,
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ReactionResponse:
@@ -301,6 +335,7 @@ async def dislike_video(
 @router.post("/videos/{video_id}/view", response_model=TrackViewResponse)
 async def track_view(
     video_id: uuid.UUID,
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TrackViewResponse:
@@ -340,6 +375,7 @@ async def get_profile_route(
 async def update_profile(
     user_id: uuid.UUID,
     payload: ProfileUpdateRequest,
+    _: None = Depends(require_signed_request),
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ProfileRead:
@@ -380,7 +416,10 @@ async def list_user_videos(
 ) -> list[VideoRead]:
     rows = await session.execute(
         select(Video)
-        .options(selectinload(Video.creator))
+        .options(
+            selectinload(Video.creator),
+            selectinload(Video.assets),
+        )
         .where(Video.user_id == user_id)
         .order_by(Video.created_at.desc())
     )
@@ -395,7 +434,10 @@ async def list_liked_videos(
     rows = await session.execute(
         select(Video)
         .join(VideoReaction, and_(VideoReaction.video_id == Video.id, VideoReaction.user_id == user_id))
-        .options(selectinload(Video.creator))
+        .options(
+            selectinload(Video.creator),
+            selectinload(Video.assets),
+        )
         .where(VideoReaction.reaction == ReactionType.LIKE)
         .order_by(VideoReaction.created_at.desc())
     )
@@ -471,6 +513,16 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
     else:
         ranking_score = float(video.ranking_score) if isinstance(video.ranking_score, Decimal) else video.ranking_score
 
+    assets: list[VideoAssetRead] = []
+    try:
+        state = inspect(video)
+    except Exception:  # noqa: BLE001 - fallback when instance inspection is unavailable
+        state = None
+
+    if state is None or "assets" not in getattr(state, "unloaded", set()):
+        raw_assets = getattr(video, "assets", None) or []
+        assets = [_serialize_asset(asset) for asset in raw_assets]
+
     return VideoRead(
         id=video.id,
         user_id=video.user_id,
@@ -484,6 +536,7 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
         created_at=video.created_at,
         status=video.status,
         ranking_score=ranking_score,
+        assets=assets,
     )
 
 
@@ -502,9 +555,92 @@ def _serialize_profile(profile: Profile) -> ProfileRead:
     )
 
 
+def _serialize_asset(asset: VideoAsset) -> VideoAssetRead:
+    return VideoAssetRead(
+        id=asset.id,
+        asset_type=asset.asset_type,
+        storage_backend=asset.storage_backend,
+        storage_key=asset.storage_key,
+        file_path=asset.file_path,
+        public_url=asset.public_url,
+        source_url=asset.source_url,
+        duration_seconds=asset.duration_seconds,
+        created_at=asset.created_at,
+        updated_at=asset.updated_at,
+    )
+
+
+async def _create_and_enqueue_video(
+    session: AsyncSession,
+    payload: VideoCreateRequest,
+    user: AuthenticatedUser,
+    queue: VideoQueue,
+) -> tuple[Video, Profile]:
+    settings = get_settings()
+    await _enforce_creation_cooldown(session, user.id, settings.video_creation_cooldown_seconds)
+
+    scene_id = payload.scene_id or str(uuid.uuid4())
+    video = Video(
+        user_id=user.id,
+        prompt=payload.prompt,
+        status=VideoStatus.PENDING,
+        aspect_ratio=payload.aspect_ratio,
+        model_key=payload.video_model_key,
+        seed=payload.seed,
+        scene_id=scene_id,
+        source_video_id=payload.source_video_id,
+        failure_reason=None,
+    )
+    session.add(video)
+
+    profile = await _ensure_profile(session, user.id, user.email)
+    profile.last_active_at = datetime.now(timezone.utc)
+
+    await session.flush()
+    await queue.enqueue(VideoJob(video_id=video.id, scene_id=scene_id))
+    return video, profile
+
+
+async def _enforce_creation_cooldown(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    cooldown_seconds: int,
+) -> None:
+    if cooldown_seconds <= 0:
+        return
+
+    result = await session.execute(
+        select(Video.created_at)
+        .where(Video.user_id == user_id)
+        .order_by(Video.created_at.desc())
+        .limit(1)
+    )
+    last_created_at = result.scalar_one_or_none()
+    if last_created_at is None:
+        return
+
+    created_at = last_created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    elapsed = (now - created_at).total_seconds()
+    if elapsed < cooldown_seconds:
+        remaining = int(cooldown_seconds - elapsed)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Please wait {remaining} seconds before creating another video",
+        )
+
+
 async def _get_video(session: AsyncSession, video_id: uuid.UUID) -> Video:
     rows = await session.execute(
-        select(Video).options(selectinload(Video.creator)).where(Video.id == video_id)
+        select(Video)
+        .options(
+            selectinload(Video.creator),
+            selectinload(Video.assets),
+        )
+        .where(Video.id == video_id)
     )
     video = rows.scalar_one_or_none()
     if video is None:
