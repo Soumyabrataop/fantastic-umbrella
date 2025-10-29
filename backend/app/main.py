@@ -5,13 +5,15 @@ import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import router
+from app.api.routes import flow_client, router, storage_service
 from app.core.settings import get_settings
-from app.db.session import init_database
+from app.db.session import get_session_factory, init_database
 from app.services.token_refresher import SessionData, TokenRefresher, seconds_until_expiry
+from app.services.video_queue import VideoQueue
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error").getChild("lifespan")
 
 
 @asynccontextmanager
@@ -19,6 +21,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     refresher = TokenRefresher(settings)
     stop_event = asyncio.Event()
+    session_factory = get_session_factory()
+    video_queue = VideoQueue(session_factory, flow_client=flow_client, storage_service=storage_service, settings=settings)
 
     async def refresh_loop() -> None:
         session: SessionData | None = None
@@ -37,16 +41,27 @@ async def lifespan(app: FastAPI):
             except asyncio.TimeoutError:
                 continue
 
-    task = asyncio.create_task(refresh_loop())
+    refresh_task = asyncio.create_task(refresh_loop(), name="token-refresh")
     try:
         await init_database()
+        await video_queue.start()
+        logger.info("Video queue worker scheduled")
+        app.state.video_queue = video_queue
         yield
     finally:
         stop_event.set()
-        task.cancel()
+        await video_queue.stop()
+        refresh_task.cancel()
         with suppress(asyncio.CancelledError):
-            await task
+            await refresh_task
 
 
 app = FastAPI(title="Flow Veo3 Proxy", version="0.2.0", lifespan=lifespan)
 app.include_router(router)
+
+settings = get_settings()
+if settings.media_storage_backend == "local":
+    mount_path = settings.media_public_base or "/media"
+    if not mount_path.startswith("/"):
+        mount_path = f"/{mount_path}"
+    app.mount(mount_path, StaticFiles(directory=settings.media_root, check_dir=True), name="media")

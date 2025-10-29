@@ -30,6 +30,18 @@ class Settings:
     supabase_anon_key: str
     supabase_service_role_key: str | None
     database_url: str
+    media_storage_backend: str
+    media_root: Path
+    media_public_base: str
+    gcp_media_bucket: str | None
+    request_signature_secret: str | None
+    request_signature_header: str
+    request_timestamp_header: str
+    request_signature_ttl_seconds: int
+    video_queue_maxsize: int
+    video_creation_cooldown_seconds: int
+    video_status_poll_seconds: int
+    video_status_max_polls: int
 
 
 def get_settings() -> Settings:
@@ -49,6 +61,36 @@ def get_settings() -> Settings:
     if not supabase_anon_key:
         raise RuntimeError("Missing SUPABASE_ANON_KEY environment variable")
 
+    database_url = (
+        os.environ.get("DATABASE_URL")
+        or os.environ.get("SUPABASE_DB_URL")
+        or "postgresql+asyncpg://postgres:Mihir0209@localhost:5432/zappdb"
+    )
+
+    media_backend = os.environ.get("MEDIA_STORAGE_BACKEND", "local").strip().lower() or "local"
+    media_root_raw = os.environ.get("MEDIA_ROOT") or str(BASE_DIR / "media")
+    media_root = Path(media_root_raw).resolve()
+    if media_backend == "local":
+        media_root.mkdir(parents=True, exist_ok=True)
+
+    media_public_base = os.environ.get("MEDIA_PUBLIC_BASE", "/media").strip() or "/media"
+    if not media_public_base.startswith("/") and not media_public_base.startswith("http"):
+        media_public_base = f"/{media_public_base}"
+
+    request_signature_secret = os.environ.get("REQUEST_SIGNATURE_SECRET")
+    request_signature_header = os.environ.get("REQUEST_SIGNATURE_HEADER", "x-instaveo-signature").lower()
+    request_timestamp_header = os.environ.get("REQUEST_TIMESTAMP_HEADER", "x-instaveo-timestamp").lower()
+
+    def _int_env(name: str, default: int, minimum: int = 0) -> int:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must be an integer") from exc
+        return max(value, minimum)
+
     return Settings(
         flow_generate_url=_get_env("FLOW_API_GENERATE_URL"),
         flow_status_url=_get_env("FLOW_API_STATUS_URL"),
@@ -60,5 +102,17 @@ def get_settings() -> Settings:
         supabase_url=supabase_url,
         supabase_anon_key=supabase_anon_key,
         supabase_service_role_key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
-        database_url=_get_env("SUPABASE_DB_URL"),
+        database_url=database_url,
+        media_storage_backend=media_backend,
+        media_root=media_root,
+        media_public_base=media_public_base.rstrip("/"),
+        gcp_media_bucket=os.environ.get("GCP_MEDIA_BUCKET"),
+        request_signature_secret=request_signature_secret,
+        request_signature_header=request_signature_header,
+        request_timestamp_header=request_timestamp_header,
+        request_signature_ttl_seconds=_int_env("REQUEST_SIGNATURE_TTL_SECONDS", default=120, minimum=1),
+        video_queue_maxsize=_int_env("VIDEO_QUEUE_MAXSIZE", default=10, minimum=1),
+        video_creation_cooldown_seconds=_int_env("VIDEO_CREATION_COOLDOWN_SECONDS", default=120, minimum=0),
+        video_status_poll_seconds=_int_env("VIDEO_STATUS_POLL_SECONDS", default=15, minimum=1),
+        video_status_max_polls=_int_env("VIDEO_STATUS_MAX_POLLS", default=40, minimum=1),
     )
