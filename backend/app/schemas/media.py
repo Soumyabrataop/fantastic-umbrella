@@ -66,6 +66,8 @@ class FeedResponse(BaseModel):
 
 
 class ReactionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     video_id: uuid.UUID = Field(..., alias="videoId")
     reaction: ReactionType
     likes: int
@@ -73,6 +75,8 @@ class ReactionResponse(BaseModel):
 
 
 class TrackViewResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     video_id: uuid.UUID = Field(..., alias="videoId")
     views: int
 

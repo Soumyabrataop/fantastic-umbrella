@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { setApiAccessToken } from "@/utils/api";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -64,6 +65,7 @@ export const auth = {
       return { error: { message: "Supabase credentials not configured" } };
     }
     const { error } = await supabase.auth.signOut();
+    setApiAccessToken(undefined);
     return { error };
   },
 

@@ -12,7 +12,23 @@ export interface Video {
   views: number;
   createdAt: string;
   status: "pending" | "processing" | "completed" | "failed";
-  ranking_score?: number;
+  rankingScore?: number;
+  ranking_score?: number; // legacy fallback until all clients migrate
+  durationSeconds?: number;
+  assets?: VideoAsset[];
+}
+
+export interface VideoAsset {
+  id: string;
+  assetType: "video" | "thumbnail";
+  storageBackend: string;
+  storageKey?: string | null;
+  filePath?: string | null;
+  publicUrl?: string | null;
+  sourceUrl?: string | null;
+  durationSeconds?: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserProfile {

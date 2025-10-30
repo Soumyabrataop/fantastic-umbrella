@@ -113,8 +113,14 @@ export function calculateCreatorRankingScore(
  */
 export function sortByRanking(videos: Video[]): Video[] {
   return [...videos].sort((a, b) => {
-    const scoreA = a.ranking_score ?? calculateRankingScore(a);
-    const scoreB = b.ranking_score ?? calculateRankingScore(b);
+    const scoreA =
+      (a as Video & { ranking_score?: number }).rankingScore ??
+      (a as Video & { ranking_score?: number }).ranking_score ??
+      calculateRankingScore(a);
+    const scoreB =
+      (b as Video & { ranking_score?: number }).rankingScore ??
+      (b as Video & { ranking_score?: number }).ranking_score ??
+      calculateRankingScore(b);
     return scoreB - scoreA;
   });
 }
