@@ -1,26 +1,522 @@
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
 @import "tailwindcss";
+@import "tw-animate-css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0;
+  --retro-purple: #9d4edd;
+  --retro-pink: #ff006e;
+  --retro-cyan: #00f5ff;
+  --retro-yellow: #ffbe0b;
+  --retro-green: #06ffa5;
+  --retro-dark: #1a1423;
+  --retro-darker: #0d0221;
+
+  --background: #1a1423;
+  --foreground: #00f5ff;
+  --card: #240046;
+  --card-foreground: #00f5ff;
+  --popover: #240046;
+  --popover-foreground: #00f5ff;
+  --primary: #ff006e;
+  --primary-foreground: #ffbe0b;
+  --secondary: #9d4edd;
+  --secondary-foreground: #00f5ff;
+  --muted: #3c096c;
+  --muted-foreground: #7209b7;
+  --accent: #00f5ff;
+  --accent-foreground: #1a1423;
+  --destructive: #ff006e;
+  --border: #9d4edd;
+  --input: #240046;
+  --ring: #00f5ff;
+  --chart-1: #ff006e;
+  --chart-2: #9d4edd;
+  --chart-3: #00f5ff;
+  --chart-4: #ffbe0b;
+  --chart-5: #06ffa5;
+  --sidebar: #240046;
+  --sidebar-foreground: #00f5ff;
+  --sidebar-primary: #ff006e;
+  --sidebar-primary-foreground: #ffbe0b;
+  --sidebar-accent: #9d4edd;
+  --sidebar-accent-foreground: #00f5ff;
+  --sidebar-border: #9d4edd;
+  --sidebar-ring: #00f5ff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: #1a1423;
+  --foreground: #00f5ff;
+  --card: #240046;
+  --card-foreground: #00f5ff;
+  --popover: #240046;
+  --popover-foreground: #00f5ff;
+  --primary: #ff006e;
+  --primary-foreground: #ffbe0b;
+  --secondary: #9d4edd;
+  --secondary-foreground: #00f5ff;
+  --muted: #3c096c;
+  --muted-foreground: #7209b7;
+  --accent: #00f5ff;
+  --accent-foreground: #1a1423;
+  --destructive: #ff006e;
+  --border: #9d4edd;
+  --input: #240046;
+  --ring: #00f5ff;
+  --chart-1: #ff006e;
+  --chart-2: #9d4edd;
+  --chart-3: #00f5ff;
+  --chart-4: #ffbe0b;
+  --chart-5: #06ffa5;
+  --sidebar: #240046;
+  --sidebar-foreground: #00f5ff;
+  --sidebar-primary: #ff006e;
+  --sidebar-primary-foreground: #ffbe0b;
+  --sidebar-accent: #9d4edd;
+  --sidebar-accent-foreground: #00f5ff;
+  --sidebar-border: #9d4edd;
+  --sidebar-ring: #00f5ff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+    outline-color: hsl(var(--ring) / 0.5);
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: "VT323", monospace;
+    image-rendering: pixelated;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Retro Effects */
+.retro-border {
+  border: 4px solid;
+  border-image: linear-gradient(45deg, #ff006e, #9d4edd, #00f5ff, #ffbe0b) 1;
+  box-shadow: 0 0 10px rgba(255, 0, 110, 0.5), 0 0 20px rgba(157, 78, 221, 0.3),
+    inset 0 0 20px rgba(0, 245, 255, 0.1);
+}
+
+.retro-glow {
+  text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  filter: brightness(1.1);
+}
+
+.retro-scanlines::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15),
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.retro-crt::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+  pointer-events: none;
+}
+
+.pixel-corners {
+  position: relative;
+  clip-path: polygon(
+    0 4px,
+    4px 4px,
+    4px 0,
+    calc(100% - 4px) 0,
+    calc(100% - 4px) 4px,
+    100% 4px,
+    100% calc(100% - 4px),
+    calc(100% - 4px) calc(100% - 4px),
+    calc(100% - 4px) 100%,
+    4px 100%,
+    4px calc(100% - 4px),
+    0 calc(100% - 4px)
+  );
+}
+
+.retro-btn {
+  position: relative;
+  padding: 12px 24px;
+  font-family: "Press Start 2P", cursive;
+  font-size: 12px;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #ff006e 0%, #9d4edd 100%);
+  border: 3px solid #00f5ff;
+  color: #ffbe0b;
+  cursor: pointer;
+  transition: all 0.1s;
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.5),
+    inset 0 0 10px rgba(255, 190, 11, 0.2);
+}
+
+.retro-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 2px 2px 0 #00f5ff, 0 0 20px rgba(0, 245, 255, 0.8),
+    inset 0 0 15px rgba(255, 190, 11, 0.3);
+}
+
+.retro-btn:active {
+  transform: translate(0, 0);
+  box-shadow: 0 0 10px rgba(0, 245, 255, 0.5),
+    inset 0 0 10px rgba(255, 190, 11, 0.2);
+}
+
+.retro-card {
+  background: linear-gradient(135deg, #240046 0%, #3c096c 100%);
+  border: 4px solid #9d4edd;
+  box-shadow: 0 0 15px rgba(157, 78, 221, 0.3), 8px 8px 0 rgba(0, 0, 0, 0.3);
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.retro-input {
+  background: #0d0221;
+  border: 3px solid #9d4edd;
+  color: #00f5ff;
+  font-family: "VT323", monospace;
+  font-size: 20px;
+  padding: 8px 12px;
+  box-shadow: inset 0 0 10px rgba(157, 78, 221, 0.3),
+    0 0 5px rgba(0, 245, 255, 0.2);
+}
+
+.retro-input:focus {
+  outline: none;
+  border-color: #00f5ff;
+  box-shadow: inset 0 0 10px rgba(0, 245, 255, 0.3),
+    0 0 15px rgba(0, 245, 255, 0.5);
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.retro-flicker {
+  animation: flicker 0.15s infinite;
+}
+
+/* Retro Ghost Loader */
+#ghost {
+  position: relative;
+  scale: 0.8;
+}
+
+#red {
+  animation: upNDown infinite 0.5s;
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: grid;
+  grid-template-columns: repeat(14, 1fr);
+  grid-template-rows: repeat(14, 1fr);
+  grid-column-gap: 0px;
+  grid-row-gap: 0px;
+  grid-template-areas:
+    "a1  a2  a3  a4  a5  top0  top0  top0  top0  a10 a11 a12 a13 a14"
+    "b1  b2  b3  top1 top1 top1 top1 top1 top1 top1 top1 b12 b13 b14"
+    "c1 c2 top2 top2 top2 top2 top2 top2 top2 top2 top2 top2 c13 c14"
+    "d1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 d14"
+    "e1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 e14"
+    "f1 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 top3 f14"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4 top4"
+    "st0 st0 an4 st1 an7 st2 an10 an10 st3 an13 st4 an16 st5 st5"
+    "an1 an2 an3 an5 an6 an8 an9 an9 an11 an12 an14 an15 an17 an18";
+}
+
+@keyframes upNDown {
+  0%,
+  49% {
+    transform: translateY(0px);
+  }
+  50%,
+  100% {
+    transform: translateY(-10px);
+  }
+}
+
+#top0,
+#top1,
+#top2,
+#top3,
+#top4,
+#st0,
+#st1,
+#st2,
+#st3,
+#st4,
+#st5 {
+  background-color: #00f5ff;
+}
+
+#top0 {
+  grid-area: top0;
+}
+#top1 {
+  grid-area: top1;
+}
+#top2 {
+  grid-area: top2;
+}
+#top3 {
+  grid-area: top3;
+}
+#top4 {
+  grid-area: top4;
+}
+#st0 {
+  grid-area: st0;
+}
+#st1 {
+  grid-area: st1;
+}
+#st2 {
+  grid-area: st2;
+}
+#st3 {
+  grid-area: st3;
+}
+#st4 {
+  grid-area: st4;
+}
+#st5 {
+  grid-area: st5;
+}
+
+#an1 {
+  grid-area: an1;
+  animation: flicker0 infinite 0.5s;
+}
+#an18 {
+  grid-area: an18;
+  animation: flicker0 infinite 0.5s;
+}
+#an2 {
+  grid-area: an2;
+  animation: flicker1 infinite 0.5s;
+}
+#an17 {
+  grid-area: an17;
+  animation: flicker1 infinite 0.5s;
+}
+#an3 {
+  grid-area: an3;
+  animation: flicker1 infinite 0.5s;
+}
+#an16 {
+  grid-area: an16;
+  animation: flicker1 infinite 0.5s;
+}
+#an4 {
+  grid-area: an4;
+  animation: flicker1 infinite 0.5s;
+}
+#an15 {
+  grid-area: an15;
+  animation: flicker1 infinite 0.5s;
+}
+#an6 {
+  grid-area: an6;
+  animation: flicker0 infinite 0.5s;
+}
+#an12 {
+  grid-area: an12;
+  animation: flicker0 infinite 0.5s;
+}
+#an7 {
+  grid-area: an7;
+  animation: flicker0 infinite 0.5s;
+}
+#an13 {
+  grid-area: an13;
+  animation: flicker0 infinite 0.5s;
+}
+#an9 {
+  grid-area: an9;
+  animation: flicker1 infinite 0.5s;
+}
+#an10 {
+  grid-area: an10;
+  animation: flicker1 infinite 0.5s;
+}
+#an8 {
+  grid-area: an8;
+  animation: flicker0 infinite 0.5s;
+}
+#an11 {
+  grid-area: an11;
+  animation: flicker0 infinite 0.5s;
+}
+
+@keyframes flicker0 {
+  0%,
+  49% {
+    background-color: #00f5ff;
+  }
+  50%,
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes flicker1 {
+  0%,
+  49% {
+    background-color: transparent;
+  }
+  50%,
+  100% {
+    background-color: #00f5ff;
+  }
+}
+
+#eye {
+  width: 40px;
+  height: 50px;
+  position: absolute;
+  top: 30px;
+  left: 10px;
+}
+
+#eye::before {
+  content: "";
+  background-color: white;
+  width: 20px;
+  height: 50px;
+  transform: translateX(10px);
+  display: block;
+  position: absolute;
+}
+
+#eye::after {
+  content: "";
+  background-color: white;
+  width: 40px;
+  height: 30px;
+  transform: translateY(10px);
+  display: block;
+  position: absolute;
+}
+
+#eye1 {
+  width: 40px;
+  height: 50px;
+  position: absolute;
+  top: 30px;
+  right: 30px;
+}
+
+#eye1::before {
+  content: "";
+  background-color: white;
+  width: 20px;
+  height: 50px;
+  transform: translateX(10px);
+  display: block;
+  position: absolute;
+}
+
+#eye1::after {
+  content: "";
+  background-color: white;
+  width: 40px;
+  height: 30px;
+  transform: translateY(10px);
+  display: block;
+  position: absolute;
+}
+
+#pupil {
+  width: 20px;
+  height: 20px;
+  background-color: #1a1423;
+  position: absolute;
+  top: 50px;
+  left: 10px;
+  z-index: 1;
+  animation: eyesMovement infinite 3s;
+}
+
+#pupil1 {
+  width: 20px;
+  height: 20px;
+  background-color: #1a1423;
+  position: absolute;
+  top: 50px;
+  right: 50px;
+  z-index: 1;
+  animation: eyesMovement infinite 3s;
+}
+
+@keyframes eyesMovement {
+  0%,
+  49% {
+    transform: translateX(0px);
+  }
+  50%,
+  99% {
+    transform: translateX(10px);
+  }
+  100% {
+    transform: translateX(0px);
+  }
+}
+
+#shadow {
+  background-color: #9d4edd;
+  width: 140px;
+  height: 140px;
+  position: absolute;
+  border-radius: 50%;
+  transform: rotateX(80deg);
+  filter: blur(20px);
+  top: 80%;
+  animation: shadowMovement infinite 0.5s;
+  opacity: 0.3;
+}
+
+@keyframes shadowMovement {
+  0%,
+  49% {
+    opacity: 0.5;
+  }
+  50%,
+  100% {
+    opacity: 0.2;
+  }
 }

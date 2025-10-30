@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 import asyncio
 import uuid
 from datetime import datetime, timezone
+
+# Ensure the backend package is importable when running this script directly
+# by adding the backend project root to sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+# When running the seeding script outside the full app/containers (e.g. on Windows),
+# the configured database host (like "postgres") may not be resolvable (socket.gaierror).
+# Provide a safe default to a local SQLite async DB unless DATABASE_URL is already set.
+import os
+os.environ.setdefault(
+    "SUPABASE_DB_URL",
+    "sqlite+aiosqlite:///./dev.db"
+)
 
 from app.db.models import Profile
 from app.db.session import get_session_factory, init_database
