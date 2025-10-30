@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { videoAPI } from "@/utils/api";
+import { videoAPI, Video } from "@/utils/api";
 import { useAuth } from "./useAuth";
 
 export function useVideoActions() {
@@ -65,10 +65,11 @@ export function useVideoActions() {
       if (!user) throw new Error("You must be logged in to create videos");
       return videoAPI.createVideo({ prompt });
     },
-    onSuccess: () => {
+    onSuccess: (video: Video) => {
       console.log("Video generation started!");
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["userVideos"] });
+      return video;
     },
     onError: (error: any) => {
       console.error(error?.message || "Failed to create video");

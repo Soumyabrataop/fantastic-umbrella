@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getPreferredVideoUrl, getPreferredThumbnailUrl } from "@/utils/api";
 import type { Video } from "@/types";
 import { generateMockVideos } from "@/utils/mockData";
 import Link from "next/link";
@@ -31,6 +32,8 @@ function FeedVideoCard({
   const [isBuffered, setIsBuffered] = useState(false);
   const [scrollY, setScrollY] = useState(0);
   const playPromiseRef = useRef<Promise<void> | null>(null);
+  const resolvedVideoUrl = getPreferredVideoUrl(video) ?? video.videoUrl;
+  const resolvedThumbnailUrl = getPreferredThumbnailUrl(video) ?? video.thumbnailUrl;
 
   // Instagram-style controls state
   const [showLikeAnimation, setShowLikeAnimation] = useState(false);
@@ -361,8 +364,8 @@ function FeedVideoCard({
                 <div className="w-full h-full bg-black rounded-[20px] border-4 border-black dark:border-white shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] dark:shadow-[10px_10px_0px_0px_rgba(255,255,255,1)] overflow-hidden relative">
                   <video
                     ref={videoRef}
-                    src={video.videoUrl}
-                    poster={video.thumbnailUrl}
+                    src={resolvedVideoUrl}
+                    poster={resolvedThumbnailUrl}
                     className="w-full h-full object-cover cursor-pointer select-none"
                     style={{
                       transform: "translateZ(0)",
@@ -460,8 +463,8 @@ function FeedVideoCard({
         <div className="absolute inset-0">
           <video
             ref={videoRef}
-            src={video.videoUrl}
-            poster={video.thumbnailUrl}
+            src={resolvedVideoUrl}
+            poster={resolvedThumbnailUrl}
             className="w-full h-full object-cover cursor-pointer select-none"
             style={{ transform: "translateZ(0)", willChange: "transform" }}
             loop

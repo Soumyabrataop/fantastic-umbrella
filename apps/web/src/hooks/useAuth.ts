@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase, hasSupabaseCredentials } from "@/lib/supabase";
+import { setApiAccessToken } from "@/utils/api";
 import { useRouter } from "next/navigation";
 
 export function useAuth() {
@@ -22,6 +23,7 @@ export function useAuth() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setApiAccessToken(session?.access_token ?? undefined);
       setLoading(false);
     });
 
@@ -31,6 +33,7 @@ export function useAuth() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setApiAccessToken(session?.access_token ?? undefined);
       setLoading(false);
     });
 
@@ -42,6 +45,7 @@ export function useAuth() {
       await supabase.auth.signOut();
       setUser(null);
       setSession(null);
+      setApiAccessToken(undefined);
       router.push("/auth");
     } catch (error) {
       console.error("Sign out error:", error);

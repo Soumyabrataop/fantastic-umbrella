@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
-import { Video } from "@/utils/api";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { Video, getPreferredVideoUrl, getPreferredThumbnailUrl } from "@/utils/api";
 import { formatViews, formatTimeAgo } from "@/utils/ranking";
 import { useVideoActions } from "@/hooks/useVideoActions";
 
@@ -13,31 +13,91 @@ interface VideoCardProps {
 export default function VideoCard({ video, onRecreate }: VideoCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const { likeVideo, dislikeVideo, trackView } = useVideoActions();
+  const videoSrc = getPreferredVideoUrl(video) ?? video.videoUrl;
+  const thumbnailSrc = getPreferredThumbnailUrl(video) ?? video.thumbnailUrl;
+  const hasTrackedViewRef = useRef(false);
+
+  const playVideo = useCallback(() => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const element = videoRef.current;
+    const playPromise = element.play();
+
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true);
+        })
+        .catch((error) => {
+          console.log("Auto-play prevented:", error);
+          setIsPlaying(false);
+        });
+    }
+  }, []);
+
+  const pauseVideo = useCallback(() => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    videoRef.current.pause();
+    setIsPlaying(false);
+  }, []);
+
+  const handleVideoClick = () => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    if (isPlaying) {
+      pauseVideo();
+    } else {
+      videoRef.current.muted = false;
+      setIsMuted(false);
+      playVideo();
+    }
+  };
+
+  useEffect(() => {
+    hasTrackedViewRef.current = false;
+    setIsMuted(true);
+    setIsPlaying(false);
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+      videoRef.current.muted = true;
+    }
+  }, [video.id]);
 
   // Track view when video is in viewport
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          trackView.mutate(video.id);
+          if (!hasTrackedViewRef.current && video.status === "completed" && videoSrc) {
+            hasTrackedViewRef.current = true;
+            trackView.mutate(video.id, {
+              onError: () => {
+                hasTrackedViewRef.current = false;
+              },
+            });
+          }
+
           if (videoRef.current) {
-            const playPromise = videoRef.current.play();
-            if (playPromise !== undefined) {
-              playPromise
-                .then(() => {
-                  setIsPlaying(true);
-                })
-                .catch((error) => {
-                  console.log("Auto-play prevented:", error);
-                  setIsPlaying(false);
-                });
-            }
+            videoRef.current.muted = isMuted;
+          }
+
+          if (video.status === "completed" && videoSrc) {
+            playVideo();
           }
         } else {
           if (videoRef.current && !videoRef.current.paused) {
-            videoRef.current.pause();
-            setIsPlaying(false);
+            pauseVideo();
           }
         }
       },
@@ -49,7 +109,13 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
     }
 
     return () => observer.disconnect();
-  }, [video.id, trackView]);
+  }, [video.id, trackView, video.status, videoSrc, pauseVideo, playVideo, isMuted]);
+
+  useEffect(() => {
+    return () => {
+      pauseVideo();
+    };
+  }, [pauseVideo]);
 
   const handleLike = () => {
     likeVideo.mutate(video.id);
@@ -78,37 +144,24 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
 
       {/* Video Player */}
       <div className="relative aspect-9/16 bg-[#0D0221] border-4 border-[#9D4EDD]">
-        {video.status === "completed" && video.videoUrl ? (
+        {video.status === "completed" && videoSrc ? (
           <video
             ref={videoRef}
-            src={video.videoUrl}
-            poster={video.thumbnailUrl}
+            src={videoSrc}
+            poster={thumbnailSrc}
             loop
             playsInline
-            muted
+            muted={isMuted}
+            preload="metadata"
             className="w-full h-full object-contain"
             style={{ imageRendering: "pixelated" }}
             onError={(e) => {
-              console.error("Video failed to load:", video.videoUrl, e);
+              console.error("Video failed to load:", videoSrc, e);
             }}
-            onClick={() => {
-              if (videoRef.current) {
-                if (isPlaying) {
-                  videoRef.current.pause();
-                  setIsPlaying(false);
-                } else {
-                  const playPromise = videoRef.current.play();
-                  if (playPromise !== undefined) {
-                    playPromise
-                      .then(() => {
-                        setIsPlaying(true);
-                      })
-                      .catch((error) => {
-                        console.log("Play prevented:", error);
-                        setIsPlaying(false);
-                      });
-                  }
-                }
+            onClick={handleVideoClick}
+            onLoadedData={() => {
+              if (video.status === "completed" && videoSrc && isPlaying) {
+                playVideo();
               }
             }}
           />
