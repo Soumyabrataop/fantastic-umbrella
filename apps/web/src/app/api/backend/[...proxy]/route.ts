@@ -141,17 +141,74 @@ async function proxyRequest(
     );
   }
 
+  // If backend responded with 304 Not Modified, some browsers may not have a
+  // cached body (e.g. after a prior corrupted cache). Returning a 304 with no
+  // usable client-side copy will cause media load failures. To be robust during
+  // development, re-request the resource unconditionally (once) and forward the
+  // fresh response.
+  if (backendResponse.status === 304) {
+    try {
+      const unconditionalHeaders = new Headers();
+      headers.forEach((value, key) => {
+        // Strip conditional request headers when re-fetching
+        if (key === "if-none-match" || key === "if-modified-since" || key === "if-range") {
+          return;
+        }
+        unconditionalHeaders.set(key, value);
+      });
+
+      const fresh = await fetch(targetUrl, {
+        method,
+        headers: unconditionalHeaders,
+        redirect: "manual",
+        body: shouldForwardBody ? bodyText || undefined : undefined,
+      });
+
+      // replace backendResponse with the fresh one for downstream handling
+      backendResponse = fresh;
+    } catch (err) {
+      console.warn("Failed to re-fetch fresh resource after 304", err);
+      // fall through and handle the original 304 response below
+    }
+  }
+
   const responseHeaders = new Headers();
   backendResponse.headers.forEach((value, key) => {
+    // Let the browser determine content-length for streamed bodies; skip it here
     if (key === "content-length") {
       return;
     }
     responseHeaders.set(key, value);
   });
 
-  const body = await backendResponse.text();
-  return new NextResponse(body, {
-    status: backendResponse.status,
+  // During development, avoid serving cached media via the proxy to prevent
+  // clients from using potentially corrupted cached copies (we previously
+  // coerced binary bodies to text which could be cached by the browser).
+  // If the proxied path looks like a media asset, prefer no-store so the
+  // browser requests fresh bytes (helps debugging). In production you may
+  // want to allow caching depending on your CDN settings.
+  if (targetPath.startsWith("/media")) {
+    responseHeaders.set("cache-control", "no-store");
+  }
+
+  // Per HTTP spec, certain status codes must not include a body (e.g. 204, 304).
+  // Also, for binary media we should forward the original body stream instead of
+  // coercing to text (which can corrupt binary data). Use the backendResponse.body
+  // stream when available for non-empty responses.
+  const status = backendResponse.status;
+
+  // If the response must not have a body, return without one.
+  if (status === 204 || status === 304) {
+    return new NextResponse(null, {
+      status,
+      headers: responseHeaders,
+    });
+  }
+
+  // Forward the raw body stream when possible to preserve binary payloads
+  const bodyStream = backendResponse.body ?? null;
+  return new NextResponse(bodyStream, {
+    status,
     headers: responseHeaders,
   });
 }
