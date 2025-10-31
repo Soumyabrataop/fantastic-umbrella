@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { getPreferredVideoUrl, getPreferredThumbnailUrl } from "@/utils/api";
 import type { Video } from "@/types";
-import { generateMockVideos } from "@/utils/mockData";
 import Link from "next/link";
+import { useFeed } from "@/hooks/useFeed";
+import { useInView } from "react-intersection-observer";
 
 // Video Card Component with Instagram-style preloading
 function FeedVideoCard({
@@ -33,7 +34,8 @@ function FeedVideoCard({
   const [scrollY, setScrollY] = useState(0);
   const playPromiseRef = useRef<Promise<void> | null>(null);
   const resolvedVideoUrl = getPreferredVideoUrl(video) ?? video.videoUrl;
-  const resolvedThumbnailUrl = getPreferredThumbnailUrl(video) ?? video.thumbnailUrl;
+  const resolvedThumbnailUrl =
+    getPreferredThumbnailUrl(video) ?? video.thumbnailUrl;
 
   // Instagram-style controls state
   const [showLikeAnimation, setShowLikeAnimation] = useState(false);
@@ -646,11 +648,35 @@ function FeedVideoCard({
 }
 
 export default function FeedPage() {
-  const [mockVideos] = useState(() => generateMockVideos(10));
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch real feed data with infinite scroll
+  const {
+    videos,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error,
+    refetch,
+  } = useFeed({
+    limit: 10,
+  });
+
+  // Intersection observer for infinite scroll
+  const { ref: loadMoreRef, inView } = useInView({
+    threshold: 0.5,
+  });
+
+  // Load more videos when the sentinel comes into view
+  useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Instagram-style snap scrolling with proper index tracking
   useEffect(() => {
@@ -691,14 +717,75 @@ export default function FeedPage() {
     };
   }, [currentIndex]);
 
-  // Preload first video immediately
-  useEffect(() => {
-    console.log("Feed loaded, preloading first video");
-  }, []);
-
   const handleRecreate = (videoId: string) => {
     alert(`Recreating video: ${videoId}`);
   };
+
+  // Loading state with skeleton loaders
+  if (isLoading) {
+    return (
+      <div className="h-screen overflow-y-scroll snap-y snap-mandatory hide-scrollbar will-change-scroll">
+        {[...Array(3)].map((_, index) => (
+          <div
+            key={index}
+            className="h-screen snap-start snap-item flex items-center justify-center bg-linear-to-br from-lime-50 via-yellow-50 to-green-50 dark:from-black dark:via-gray-950 dark:to-black"
+          >
+            <div className="animate-pulse flex flex-col items-center gap-4">
+              <div className="w-64 h-96 bg-gray-300 dark:bg-gray-700 rounded-3xl"></div>
+              <div className="w-48 h-6 bg-gray-300 dark:bg-gray-700 rounded"></div>
+              <div className="w-32 h-4 bg-gray-300 dark:bg-gray-700 rounded"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Error state with retry button
+  if (error) {
+    return (
+      <div className="h-screen flex items-center justify-center snap-start snap-item">
+        <div className="text-center p-8 bg-white dark:bg-gray-800 border-4 border-red-500 shadow-[8px_8px_0px_0px_rgba(239,68,68,1)] rounded-2xl max-w-md mx-4">
+          <div className="text-7xl mb-6">⚠️</div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
+            Failed to Load Feed
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg">
+            {error.message || "Something went wrong. Please try again."}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="inline-block bg-linear-to-r from-red-500 to-pink-600 text-white px-8 py-4 rounded-full font-bold text-lg border-4 border-black dark:border-red-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(239,68,68,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(239,68,68,1)] transition-all duration-200"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (!videos || videos.length === 0) {
+    return (
+      <div className="h-screen flex items-center justify-center snap-start snap-item">
+        <div className="text-center p-8 bg-white dark:bg-gray-800 border-4 border-black dark:border-purple-500 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(168,85,247,1)] rounded-2xl max-w-md mx-4">
+          <div className="text-7xl mb-6 animate-retro-pulse">📹</div>
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
+            No videos yet
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg">
+            Be the first to create an AI-generated video!
+          </p>
+          <Link
+            href="/create"
+            className="inline-block bg-linear-to-r from-pink-500 to-purple-600 text-white px-8 py-4 rounded-full font-bold text-lg border-4 border-black dark:border-purple-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(168,85,247,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(168,85,247,1)] transition-all duration-200"
+          >
+            Create Video
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -709,64 +796,70 @@ export default function FeedPage() {
         scrollBehavior: "smooth",
       }}
     >
-      {mockVideos.length === 0 ? (
-        <div className="h-screen flex items-center justify-center snap-start snap-item">
-          <div className="text-center p-8 bg-white dark:bg-gray-800 border-4 border-black dark:border-purple-500 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(168,85,247,1)] rounded-2xl max-w-md mx-4">
-            <div className="text-7xl mb-6 animate-retro-pulse">📹</div>
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-3">
-              No videos yet
-            </h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg">
-              Be the first to create an AI-generated video!
-            </p>
-            <Link
-              href="/create"
-              className="inline-block bg-linear-to-r from-pink-500 to-purple-600 text-white px-8 py-4 rounded-full font-bold text-lg border-4 border-black dark:border-purple-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(168,85,247,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(168,85,247,1)] transition-all duration-200"
-            >
-              Create Video
-            </Link>
+      {videos.map((video, index) => {
+        const isActive = index === currentIndex;
+        const isPrevious = index === currentIndex - 1;
+        const isNext = index === currentIndex + 1;
+
+        return (
+          <div key={video.id} className="h-screen snap-start snap-item">
+            <FeedVideoCard
+              video={video as any}
+              index={index}
+              onRecreate={handleRecreate}
+              isActive={isActive}
+              isPrevious={isPrevious}
+              isNext={isNext}
+            />
+          </div>
+        );
+      })}
+
+      {/* Loading more indicator */}
+      {isFetchingNextPage && (
+        <div className="h-screen snap-start snap-item flex items-center justify-center bg-linear-to-br from-lime-50 via-yellow-50 to-green-50 dark:from-black dark:via-gray-950 dark:to-black">
+          <div className="animate-pulse flex flex-col items-center gap-4">
+            <div className="w-64 h-96 bg-gray-300 dark:bg-gray-700 rounded-3xl"></div>
+            <div className="w-48 h-6 bg-gray-300 dark:bg-gray-700 rounded"></div>
+            <div className="w-32 h-4 bg-gray-300 dark:bg-gray-700 rounded"></div>
           </div>
         </div>
-      ) : (
-        <>
-          {mockVideos.map((video, index) => {
-            const isActive = index === currentIndex;
-            const isPrevious = index === currentIndex - 1;
-            const isNext = index === currentIndex + 1;
+      )}
 
-            return (
-              <div key={video.id} className="h-screen snap-start snap-item">
-                <FeedVideoCard
-                  video={video as any}
-                  index={index}
-                  onRecreate={handleRecreate}
-                  isActive={isActive}
-                  isPrevious={isPrevious}
-                  isNext={isNext}
-                />
-              </div>
-            );
-          })}
-
-          {/* End Banner */}
-          <div className="h-screen snap-start snap-item flex items-center justify-center">
-            <div className="text-center p-8">
-              <div className="text-8xl mb-8 animate-retro-pulse">🎉</div>
-              <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4 drop-shadow-lg">
-                You've Reached the End!
-              </h2>
-              <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
-                That's all {mockVideos.length} videos for now
-              </p>
-              <button
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                className="bg-linear-to-r from-pink-500 to-purple-600 text-white px-10 py-5 rounded-full font-bold text-xl border-4 border-black dark:border-purple-400 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(168,85,247,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[4px_4px_0px_0px_rgba(168,85,247,1)] transition-all duration-200"
-              >
-                ↑ Back to Top
-              </button>
-            </div>
+      {/* Infinite scroll sentinel */}
+      {hasNextPage && !isFetchingNextPage && (
+        <div
+          ref={loadMoreRef}
+          className="h-screen snap-start snap-item flex items-center justify-center"
+        >
+          <div className="text-center p-8">
+            <div className="text-6xl mb-4 animate-bounce">⬇️</div>
+            <p className="text-xl text-gray-600 dark:text-gray-300">
+              Loading more videos...
+            </p>
           </div>
-        </>
+        </div>
+      )}
+
+      {/* End Banner */}
+      {!hasNextPage && videos.length > 0 && (
+        <div className="h-screen snap-start snap-item flex items-center justify-center">
+          <div className="text-center p-8">
+            <div className="text-8xl mb-8 animate-retro-pulse">🎉</div>
+            <h2 className="text-4xl font-bold text-gray-900 dark:text-white mb-4 drop-shadow-lg">
+              You've Reached the End!
+            </h2>
+            <p className="text-xl text-gray-600 dark:text-gray-300 mb-8">
+              That's all {videos.length} videos for now
+            </p>
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="bg-linear-to-r from-pink-500 to-purple-600 text-white px-10 py-5 rounded-full font-bold text-xl border-4 border-black dark:border-purple-400 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(168,85,247,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[4px_4px_0px_0px_rgba(168,85,247,1)] transition-all duration-200"
+            >
+              ↑ Back to Top
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

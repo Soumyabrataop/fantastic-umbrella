@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.settings import get_settings
 from app.db.models import (
+    AssetType,
     Profile,
     ReactionType,
     Video,
@@ -201,6 +202,10 @@ async def sync_video_status(
     owner_profile.last_active_at = datetime.now(timezone.utc)
 
     await session.flush()
+    
+    # Refresh signed URLs if needed before returning
+    await storage_service.refresh_signed_urls(session, video)
+    
     return _serialize_video(video, creator=owner_profile)
 
 
@@ -244,6 +249,10 @@ async def get_feed(
     has_more = len(videos) > limit
     items = videos[:limit]
 
+    # Refresh signed URLs for all videos if needed
+    for video in items:
+        await storage_service.refresh_signed_urls(session, video)
+
     serialized = [_serialize_video(video) for video in items]
     next_cursor = _encode_cursor(items[-1]) if has_more and items else None
     return FeedResponse(videos=serialized, next_cursor=next_cursor, has_more=has_more)
@@ -255,6 +264,7 @@ async def get_video_detail(
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
     video = await _get_video(session, video_id)
+    await storage_service.refresh_signed_urls(session, video)
     return _serialize_video(video)
 
 
@@ -423,7 +433,13 @@ async def list_user_videos(
         .where(Video.user_id == user_id)
         .order_by(Video.created_at.desc())
     )
-    return [_serialize_video(video) for video in rows.scalars().all()]
+    videos = rows.scalars().all()
+    
+    # Refresh signed URLs for all videos if needed
+    for video in videos:
+        await storage_service.refresh_signed_urls(session, video)
+    
+    return [_serialize_video(video) for video in videos]
 
 
 @router.get("/users/{user_id}/liked", response_model=list[VideoRead])
@@ -441,7 +457,13 @@ async def list_liked_videos(
         .where(VideoReaction.reaction == ReactionType.LIKE)
         .order_by(VideoReaction.created_at.desc())
     )
-    return [_serialize_video(video) for video in rows.scalars().all()]
+    videos = rows.scalars().all()
+    
+    # Refresh signed URLs for all videos if needed
+    for video in videos:
+        await storage_service.refresh_signed_urls(session, video)
+    
+    return [_serialize_video(video) for video in videos]
 
 
 @router.get("/users/top", response_model=LeaderboardResponse)
@@ -514,6 +536,9 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
         ranking_score = float(video.ranking_score) if isinstance(video.ranking_score, Decimal) else video.ranking_score
 
     assets: list[VideoAssetRead] = []
+    video_url = video.video_url or ""
+    thumbnail_url = video.thumbnail_url
+    
     try:
         state = inspect(video)
     except Exception:  # noqa: BLE001 - fallback when instance inspection is unavailable
@@ -522,14 +547,21 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
     if state is None or "assets" not in getattr(state, "unloaded", set()):
         raw_assets = getattr(video, "assets", None) or []
         assets = [_serialize_asset(asset) for asset in raw_assets]
+        
+        # Extract signed URLs from assets - these take precedence over video table URLs
+        for asset in raw_assets:
+            if asset.asset_type == AssetType.VIDEO and asset.public_url:
+                video_url = asset.public_url
+            elif asset.asset_type == AssetType.THUMBNAIL and asset.public_url:
+                thumbnail_url = asset.public_url
 
     return VideoRead(
         id=video.id,
         user_id=video.user_id,
         username=username,
         prompt=video.prompt,
-        video_url=video.video_url or "",
-        thumbnail_url=video.thumbnail_url,
+        video_url=video_url,
+        thumbnail_url=thumbnail_url,
         likes_count=video.likes_count,
         dislikes_count=video.dislikes_count,
         views_count=video.views_count,

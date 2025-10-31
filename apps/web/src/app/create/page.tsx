@@ -2,15 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useVideoActions } from "@/hooks/useVideoActions";
 import { videoAPI, Video, getPreferredVideoUrl } from "@/utils/api";
+import { toast } from "@/utils/toast";
 import Loader from "@/components/Loader";
 
 const POLL_INTERVAL_MS = 5000;
 const PROGRESS_INTERVAL_MS = 1500;
 const PROGRESS_PENDING_TARGET = 60;
 const PROGRESS_FINALIZING_TARGET = 99;
+const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max polling
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === "string") {
@@ -23,11 +26,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
       response?: { data?: { message?: string } };
     };
 
-    return (
-      anyError?.response?.data?.message ||
-      anyError?.message ||
-      fallback
-    );
+    return anyError?.response?.data?.message || anyError?.message || fallback;
   }
 
   return fallback;
@@ -43,22 +42,87 @@ export default function CreatePage() {
   const [progress, setProgress] = useState(0);
   const [generatedVideo, setGeneratedVideo] = useState("");
   const [pageLoading, setPageLoading] = useState(true);
-  const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
-  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+  const [pollingVideoId, setPollingVideoId] = useState<string | null>(null);
+  const [videoStatus, setVideoStatus] = useState<Video["status"] | "idle">(
+    "idle"
+  );
   const [error, setError] = useState<string | null>(null);
+  const [failureReason, setFailureReason] = useState<string | null>(null);
+  const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollInFlightRef = useRef(false);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
   const progressTargetRef = useRef<number>(PROGRESS_PENDING_TARGET);
 
-  const clearPollInterval = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
+  // React Query polling for video status with timeout
+  const { data: pollingVideo } = useQuery({
+    queryKey: ["video-status", pollingVideoId],
+    queryFn: async () => {
+      if (!pollingVideoId) return null;
+
+      // Check for timeout (10 minutes)
+      if (pollingStartTime && Date.now() - pollingStartTime > POLL_TIMEOUT_MS) {
+        setError(
+          "Video generation timed out after 10 minutes. Please try again."
+        );
+        setPollingVideoId(null);
+        handleVideoFailure();
+        throw new Error("Polling timeout");
+      }
+
+      try {
+        return await videoAPI.syncVideoStatus(pollingVideoId);
+      } catch (syncError: any) {
+        const status = syncError?.status || syncError?.response?.status;
+
+        // Handle authentication errors
+        if (status === 401) {
+          setError("Session expired. Please sign in again.");
+          throw syncError;
+        }
+
+        // Handle rate limit errors
+        if (status === 429) {
+          const retryAfter = syncError?.retryAfter || 60;
+          setError(
+            `Rate limit exceeded. Please wait ${retryAfter} seconds before trying again.`
+          );
+          throw syncError;
+        }
+
+        // Handle network errors
+        if (syncError?.type === "network") {
+          setError(
+            "Network error. Please check your connection and try again."
+          );
+          throw syncError;
+        }
+
+        // Fallback to getVideo if sync fails
+        try {
+          return await videoAPI.getVideo(pollingVideoId);
+        } catch (fallbackError: any) {
+          console.error("Failed to poll video status", fallbackError);
+          setError(
+            (prev) =>
+              prev ||
+              extractErrorMessage(
+                fallbackError,
+                "Unable to fetch video status."
+              )
+          );
+          throw fallbackError;
+        }
+      }
+    },
+    enabled:
+      pollingVideoId !== null &&
+      (videoStatus === "pending" || videoStatus === "processing"),
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: 2,
+  });
 
   const clearProgressInterval = () => {
     if (progressIntervalRef.current) {
@@ -73,7 +137,10 @@ export default function CreatePage() {
     setProgress(5);
     progressIntervalRef.current = setInterval(() => {
       setProgress((prev) => {
-        const target = Math.min(progressTargetRef.current, PROGRESS_FINALIZING_TARGET);
+        const target = Math.min(
+          progressTargetRef.current,
+          PROGRESS_FINALIZING_TARGET
+        );
         if (prev >= target) {
           return target;
         }
@@ -89,118 +156,75 @@ export default function CreatePage() {
       setGeneratedVideo(playbackUrl);
       setError(null);
     } else {
-      setError((prev) => prev || "Video completed but media is unavailable." );
+      setError((prev) => prev || "Video completed but media is unavailable.");
     }
 
     setStage("complete");
     progressTargetRef.current = 100;
     setProgress(100);
     clearProgressInterval();
-    clearPollInterval();
+    setPollingVideoId(null); // Stop polling
   };
 
   const handleVideoFailure = () => {
     clearProgressInterval();
-    clearPollInterval();
+    setPollingVideoId(null); // Stop polling
     setStage("input");
     setProgress(0);
     setGeneratedVideo("");
-    setCurrentVideo(null);
-    setCurrentVideoId(null);
+    setVideoStatus("idle");
     progressTargetRef.current = PROGRESS_PENDING_TARGET;
   };
 
-  const pollVideoStatus = async (videoId: string) => {
-    if (pollInFlightRef.current) {
-      return;
-    }
+  // Handle polling video updates from React Query
+  useEffect(() => {
+    if (pollingVideo) {
+      setVideoStatus(pollingVideo.status);
 
-    pollInFlightRef.current = true;
-    try {
-      let latest: Video | null = null;
-
-      try {
-        latest = await videoAPI.syncVideoStatus(videoId);
-      } catch (syncError) {
-        const status = (syncError as { response?: { status?: number } })?.response?.status;
-        if (status === 401) {
-          setError("Session expired. Please sign in again.");
-          handleVideoFailure();
-          return;
-        }
-
-        if (status && status >= 500) {
-          console.warn("Video status sync failed with server error", syncError);
-        }
-
-        try {
-          latest = await videoAPI.getVideo(videoId);
-        } catch (fallbackError) {
-          throw fallbackError;
-        }
-      }
-
-      if (!latest) {
-        latest = await videoAPI.getVideo(videoId);
-      }
-
-      setCurrentVideo(latest);
-
-      if (latest.status === "pending") {
+      if (pollingVideo.status === "pending") {
         progressTargetRef.current = Math.max(
           progressTargetRef.current,
           PROGRESS_PENDING_TARGET
         );
-      } else if (latest.status === "processing") {
+      } else if (pollingVideo.status === "processing") {
         progressTargetRef.current = Math.max(
           progressTargetRef.current,
           PROGRESS_FINALIZING_TARGET
         );
       }
 
-      if (latest.status === "completed") {
-        handleVideoCompletion(latest);
-      } else if (latest.status === "failed") {
-        setError("Video generation failed. Please try again.");
+      if (pollingVideo.status === "completed") {
+        toast.success("Video generated successfully!");
+        handleVideoCompletion(pollingVideo);
+      } else if (pollingVideo.status === "failed") {
+        // Extract failure reason from video if available
+        const reason =
+          (pollingVideo as any).failureReason || "Video generation failed";
+        setError(reason);
+        setFailureReason(reason);
+        toast.error(reason);
         handleVideoFailure();
       }
-    } catch (pollError) {
-      console.error("Failed to poll video status", pollError);
-      setError((prev) => prev || extractErrorMessage(pollError, "Unable to fetch video status."));
-    } finally {
-      pollInFlightRef.current = false;
     }
-  };
-
-  const startPolling = (videoId: string) => {
-    clearPollInterval();
-    pollInFlightRef.current = false;
-    setCurrentVideoId(videoId);
-    void pollVideoStatus(videoId);
-    pollIntervalRef.current = setInterval(() => {
-      void pollVideoStatus(videoId);
-    }, POLL_INTERVAL_MS);
-  };
+  }, [pollingVideo]);
 
   const resetState = () => {
-    clearPollInterval();
     clearProgressInterval();
-    pollInFlightRef.current = false;
+    setPollingVideoId(null);
     setStage("input");
     setPrompt("");
     setProgress(0);
     setGeneratedVideo("");
-    setCurrentVideo(null);
-    setCurrentVideoId(null);
+    setVideoStatus("idle");
     setError(null);
+    setFailureReason(null);
+    setPollingStartTime(null);
     progressTargetRef.current = PROGRESS_PENDING_TARGET;
   };
 
   useEffect(() => {
     return () => {
-      clearPollInterval();
       clearProgressInterval();
-      pollInFlightRef.current = false;
     };
   }, []);
 
@@ -232,31 +256,44 @@ export default function CreatePage() {
       return;
     }
 
-    clearPollInterval();
     clearProgressInterval();
-    pollInFlightRef.current = false;
     setError(null);
     setStage("loading");
     setProgress(0);
     setGeneratedVideo("");
-    setCurrentVideo(null);
+    setVideoStatus("idle");
     startProgress();
 
     try {
       const created = await createVideo.mutateAsync(prompt.trim());
-      setCurrentVideo(created);
-      setCurrentVideoId(created.id);
-      startPolling(created.id);
-    } catch (submitError) {
+      setPollingVideoId(created.id);
+      setVideoStatus(created.status);
+      setPollingStartTime(Date.now()); // Start timeout timer
+    } catch (submitError: any) {
       console.error("Failed to create video", submitError);
-      const status = (submitError as { response?: { status?: number } })?.response?.status;
-      if (status === 401) {
-        setError("Authentication failed. Please refresh and sign in again before generating.");
+      const status = submitError?.status || submitError?.response?.status;
+
+      if (status === 401 || submitError?.type === "auth") {
+        setError(
+          "Authentication failed. Please refresh and sign in again before generating."
+        );
+      } else if (status === 429 || submitError?.type === "rate_limit") {
+        const retryAfter = submitError?.retryAfter || 60;
+        setError(
+          `Rate limit exceeded. Please wait ${retryAfter} seconds before creating another video.`
+        );
+      } else if (submitError?.type === "network") {
+        setError("Network error. Please check your connection and try again.");
       } else {
-        setError(extractErrorMessage(submitError, "Failed to create video. Please try again."));
+        setError(
+          submitError?.message ||
+            extractErrorMessage(
+              submitError,
+              "Failed to create video. Please try again."
+            )
+        );
       }
       clearProgressInterval();
-      clearPollInterval();
       setStage("input");
       setProgress(0);
     }
@@ -267,18 +304,18 @@ export default function CreatePage() {
   };
 
   const handleShare = async () => {
-    if (!currentVideoId) {
+    if (!pollingVideoId) {
       window.alert("Video is not ready to share yet.");
       return;
     }
 
-    const shareUrl = `${window.location.origin}/video/${currentVideoId}`;
+    const shareUrl = `${window.location.origin}/video/${pollingVideoId}`;
 
     try {
       if (navigator.share) {
         await navigator.share({
           title: "Check out this InstaVEO video",
-          text: currentVideo?.prompt || "Amazing AI-generated video",
+          text: pollingVideo?.prompt || "Amazing AI-generated video",
           url: shareUrl,
         });
       } else {
@@ -313,8 +350,49 @@ export default function CreatePage() {
     <div className="min-h-screen bg-linear-to-br from-cream via-pink-100 to-purple-100 dark:from-background dark:via-gray-900 dark:to-purple-900 flex items-center justify-center p-4 pb-32 md:pb-4">
       <div className="w-full max-w-5xl">
         {error && (
-          <div className="mb-6 rounded-xl border-3 border-black bg-white/90 p-4 text-sm font-bold text-red-600 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:border-red-400 dark:bg-gray-900/80 dark:text-red-300">
-            {error}
+          <div className="mb-6 rounded-xl border-3 border-black bg-white/90 p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:border-red-400 dark:bg-gray-900/80">
+            <div className="flex items-start gap-3">
+              <svg
+                className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-red-600 dark:text-red-300">
+                  {error}
+                </p>
+                {failureReason && failureReason !== error && (
+                  <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                    Details: {failureReason}
+                  </p>
+                )}
+              </div>
+              {stage === "input" && (
+                <button
+                  onClick={() => setError(null)}
+                  className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 transition-colors"
+                  aria-label="Dismiss error"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -426,21 +504,21 @@ export default function CreatePage() {
         {/* Loading Stage - Old TV Style */}
         {stage === "loading" && (
           <div className="space-y-4 animate-fade-slide-up">
-              <div className="text-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                  Generating Your Video...
-                </h2>
-                <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-1">
-                  "{prompt}"
-                </p>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  {currentVideo?.status === "processing"
-                    ? "Processing in Flow"
-                    : currentVideo?.status === "pending"
-                    ? "Queued for generation"
-                    : "Contacting generator"}
-                </p>
-              </div>
+            <div className="text-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+                Generating Your Video...
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-1">
+                "{prompt}"
+              </p>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {videoStatus === "processing"
+                  ? "Processing in Flow"
+                  : videoStatus === "pending"
+                  ? "Queued for generation"
+                  : "Contacting generator"}
+              </p>
+            </div>
 
             {/* Old TV Screen */}
             <div className="relative w-full max-w-xs mx-auto aspect-9/16 bg-gray-900 rounded-2xl border-3 border-black dark:border-purple-500 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(168,85,247,1)] overflow-hidden">
@@ -470,7 +548,7 @@ export default function CreatePage() {
                     <p className="text-white font-mono text-lg font-bold animate-pulse">
                       {progress >= 95
                         ? "FINALIZING..."
-                        : currentVideo?.status === "processing"
+                        : videoStatus === "processing"
                         ? "PROCESSING..."
                         : "QUEUED..."}
                     </p>
@@ -565,7 +643,7 @@ export default function CreatePage() {
               <button
                 onClick={handlePublish}
                 className="bg-linear-to-r from-green-500 to-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold text-xs border-3 border-black dark:border-emerald-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(34,197,94,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 flex items-center justify-center gap-1"
-                disabled={!currentVideoId}
+                disabled={!pollingVideoId}
               >
                 <svg
                   className="w-4 h-4"
@@ -586,7 +664,7 @@ export default function CreatePage() {
               <button
                 onClick={handleShare}
                 className="bg-linear-to-r from-blue-500 to-cyan-600 text-white px-3 py-2.5 rounded-lg font-bold text-xs border-3 border-black dark:border-cyan-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(34,211,238,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 flex items-center justify-center gap-1"
-                disabled={!currentVideoId}
+                disabled={!pollingVideoId}
               >
                 <svg
                   className="w-4 h-4"

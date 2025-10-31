@@ -30,13 +30,39 @@ export function useFeed(options: UseFeedOptions = {}) {
     string | undefined
   >({
     queryKey: user?.id ? ["feed", user.id] : ["feed"],
-    queryFn: ({ pageParam }: { pageParam?: string }) =>
-      videoAPI.getFeed(pageParam, limit),
+    queryFn: async ({ pageParam }: { pageParam?: string }) => {
+      try {
+        return await videoAPI.getFeed(pageParam, limit);
+      } catch (err: any) {
+        // Handle auth errors by redirecting (handled by interceptor)
+        if (err?.type === "auth") {
+          throw err;
+        }
+        // Re-throw other errors for React Query to handle
+        throw err;
+      }
+    },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: FeedResponse) => {
       return lastPage.hasMore ? lastPage.nextCursor : undefined;
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: (failureCount, error: any) => {
+      // Don't retry on auth errors
+      if (error?.type === "auth" || error?.status === 401) {
+        return false;
+      }
+      // Retry network errors up to 2 times
+      if (error?.type === "network") {
+        return failureCount < 2;
+      }
+      // Don't retry client errors (400-499)
+      if (error?.status >= 400 && error?.status < 500) {
+        return false;
+      }
+      // Retry server errors up to 3 times
+      return failureCount < 3;
+    },
   });
 
   // Flatten videos from all pages

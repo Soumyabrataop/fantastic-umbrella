@@ -37,6 +37,7 @@ export interface UserProfile {
   email: string;
   videosCreated: number;
   totalLikes: number;
+  totalDislikes?: number;
   createdAt: string;
 }
 
