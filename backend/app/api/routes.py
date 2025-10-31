@@ -611,6 +611,10 @@ async def _create_and_enqueue_video(
     settings = get_settings()
     await _enforce_creation_cooldown(session, user.id, settings.video_creation_cooldown_seconds)
 
+    # Ensure profile exists BEFORE creating video to avoid foreign key violation
+    profile = await _ensure_profile(session, user.id, user.email)
+    profile.last_active_at = datetime.now(timezone.utc)
+
     scene_id = payload.scene_id or str(uuid.uuid4())
     video = Video(
         user_id=user.id,
@@ -624,9 +628,6 @@ async def _create_and_enqueue_video(
         failure_reason=None,
     )
     session.add(video)
-
-    profile = await _ensure_profile(session, user.id, user.email)
-    profile.last_active_at = datetime.now(timezone.utc)
 
     await session.flush()
     await queue.enqueue(VideoJob(video_id=video.id, scene_id=scene_id))
