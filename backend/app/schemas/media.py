@@ -60,6 +60,8 @@ class VideoRead(BaseModel):
 
 
 class FeedResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     videos: list[VideoRead]
     next_cursor: str | None = Field(None, alias="nextCursor")
     has_more: bool = Field(..., alias="hasMore")

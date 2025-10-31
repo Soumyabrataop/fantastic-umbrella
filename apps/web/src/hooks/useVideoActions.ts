@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { videoAPI, Video } from "@/utils/api";
 import { useAuth } from "./useAuth";
+import { toast } from "@/utils/toast";
 
 export function useVideoActions() {
   const queryClient = useQueryClient();
@@ -16,10 +17,20 @@ export function useVideoActions() {
     onSuccess: () => {
       // Invalidate feed to refetch with updated data
       queryClient.invalidateQueries({ queryKey: ["feed"] });
-      console.log("Video liked!");
     },
     onError: (error: any) => {
-      console.error(error?.message || "Failed to like video");
+      console.error("Failed to like video:", error);
+      if (error?.type === "auth") {
+        // Auth errors are handled by interceptor (redirect to login)
+        return;
+      }
+      if (error?.type === "rate_limit") {
+        toast.error(
+          `Rate limit exceeded. Please wait ${error.retryAfter || 60} seconds.`
+        );
+        return;
+      }
+      toast.error(error?.message || "Failed to like video. Please try again.");
     },
   });
 
@@ -30,10 +41,21 @@ export function useVideoActions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["feed"] });
-      console.log("Video disliked");
     },
     onError: (error: any) => {
-      console.error(error?.message || "Failed to dislike video");
+      console.error("Failed to dislike video:", error);
+      if (error?.type === "auth") {
+        return;
+      }
+      if (error?.type === "rate_limit") {
+        toast.error(
+          `Rate limit exceeded. Please wait ${error.retryAfter || 60} seconds.`
+        );
+        return;
+      }
+      toast.error(
+        error?.message || "Failed to dislike video. Please try again."
+      );
     },
   });
 
@@ -51,12 +73,24 @@ export function useVideoActions() {
       return videoAPI.recreateVideo(videoId);
     },
     onSuccess: () => {
-      console.log("Video recreation started!");
+      toast.success("Video recreation started!");
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["userVideos"] });
     },
     onError: (error: any) => {
-      console.error(error?.message || "Failed to recreate video");
+      console.error("Failed to recreate video:", error);
+      if (error?.type === "auth") {
+        return;
+      }
+      if (error?.type === "rate_limit") {
+        toast.error(
+          `Rate limit exceeded. Please wait ${error.retryAfter || 60} seconds.`
+        );
+        return;
+      }
+      toast.error(
+        error?.message || "Failed to recreate video. Please try again."
+      );
     },
   });
 
@@ -66,13 +100,31 @@ export function useVideoActions() {
       return videoAPI.createVideo({ prompt });
     },
     onSuccess: (video: Video) => {
-      console.log("Video generation started!");
+      toast.success("Video generation started!");
       queryClient.invalidateQueries({ queryKey: ["feed"] });
       queryClient.invalidateQueries({ queryKey: ["userVideos"] });
       return video;
     },
     onError: (error: any) => {
-      console.error(error?.message || "Failed to create video");
+      console.error("Failed to create video:", error);
+      if (error?.type === "auth") {
+        return;
+      }
+      if (error?.type === "rate_limit") {
+        toast.error(
+          `Rate limit exceeded. Please wait ${error.retryAfter || 60} seconds.`
+        );
+        return;
+      }
+      if (error?.type === "network") {
+        toast.error(
+          "Network error. Please check your connection and try again."
+        );
+        return;
+      }
+      toast.error(
+        error?.message || "Failed to create video. Please try again."
+      );
     },
   });
 
@@ -96,13 +148,13 @@ export function useVideoActions() {
       }
     },
     onSuccess: () => {
-      console.log("Video shared successfully!");
+      toast.success("Video shared successfully!");
     },
     onError: (error: any) => {
       if (error?.message?.includes("clipboard")) {
-        console.log(error.message);
+        toast.info(error.message);
       } else {
-        console.error("Failed to share video");
+        toast.error("Failed to share video");
       }
     },
   });

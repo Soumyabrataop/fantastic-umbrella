@@ -97,8 +97,22 @@ class VideoQueue:
                 except Exception:
                     await session.rollback()
                     raise
+            except asyncio.TimeoutError as exc:
+                error_msg = "Video generation timed out"
+                logger.error(f"{error_msg} for video {job.video_id}", extra={"video_id": str(job.video_id)})
+                await self._mark_failed(session, video, reason=error_msg)
+                raise
+            except RuntimeError as exc:
+                # RuntimeError is used for permanent failures (storage errors, etc.)
+                error_msg = str(exc)
+                logger.error(f"Permanent error for video {job.video_id}: {error_msg}", extra={"video_id": str(job.video_id)})
+                await self._mark_failed(session, video, reason=error_msg)
+                raise
             except Exception as exc:  # noqa: BLE001
-                await self._mark_failed(session, video, reason=str(exc))
+                # Catch-all for unexpected errors
+                error_msg = f"Unexpected error: {type(exc).__name__}: {exc}"
+                logger.exception(f"Video job failed for video {job.video_id}: {exc}", extra={"video_id": str(job.video_id)})
+                await self._mark_failed(session, video, reason=error_msg)
                 raise
 
     async def _begin_generation(self, session: AsyncSession, video: Video, profile: Profile) -> None:
@@ -117,43 +131,75 @@ class VideoQueue:
             sceneId=scene_id,
         )
 
-        response = await self._flow_client.generate_video(generate_request)
+        try:
+            response = await self._flow_client.generate_video(generate_request)
+        except Exception as e:
+            error_msg = f"Failed to initiate video generation with Flow API: {e}"
+            logger.error(error_msg, extra={"video_id": str(video.id)}, exc_info=True)
+            raise RuntimeError(error_msg) from e
+        
         if response is None:
-            logger.error(
-                "Flow generate_video returned no payload",
-                extra={"video_id": str(video.id)},
-            )
-            raise RuntimeError("Flow response missing operation name")
+            error_msg = "Flow API returned empty response"
+            logger.error(error_msg, extra={"video_id": str(video.id)})
+            raise RuntimeError(error_msg)
 
         operation_name = self._extract_operation_name(response)
         if not operation_name:
+            error_msg = "Flow API response missing operation name"
             logger.error(
-                "Flow response missing operation name for video %s: %s",
-                video.id,
-                response,
+                f"{error_msg} for video {video.id}: {response}",
                 extra={"video_id": str(video.id), "response": response},
             )
-            raise RuntimeError("Flow response missing operation name")
+            raise RuntimeError(error_msg)
+        
         video.operation_name = operation_name
         await session.commit()
+        logger.info(f"Video generation initiated for video {video.id}, operation: {operation_name}")
 
         await self._poll_until_complete(session, video, scene_id)
 
     async def _poll_until_complete(self, session: AsyncSession, video: Video, scene_id: str) -> None:
         settings = self._settings
+        logger.info(f"Starting polling for video {video.id}, max polls: {settings.video_status_max_polls}")
+        
         for attempt in range(settings.video_status_max_polls):
             if attempt > 0:
                 await asyncio.sleep(settings.video_status_poll_seconds)
 
-            request = CheckVideoStatusRequest(operationName=video.operation_name, sceneId=scene_id)
-            response = await self._flow_client.check_video_status(request)
-            update = parse_flow_status(response)
-            await self._apply_status_update(session, video, update)
+            try:
+                request = CheckVideoStatusRequest(operationName=video.operation_name, sceneId=scene_id)
+                response = await self._flow_client.check_video_status(request)
+                update = parse_flow_status(response)
+                
+                logger.debug(
+                    f"Poll attempt {attempt + 1}/{settings.video_status_max_polls} for video {video.id}: status={update.status}",
+                    extra={"video_id": str(video.id), "attempt": attempt + 1, "status": update.status}
+                )
+                
+                await self._apply_status_update(session, video, update)
 
-            if update.status in {VideoStatus.COMPLETED, VideoStatus.FAILED}:
-                return
+                if update.status in {VideoStatus.COMPLETED, VideoStatus.FAILED}:
+                    logger.info(f"Video {video.id} reached terminal status: {update.status}")
+                    if update.status == VideoStatus.FAILED and update.failure_reason:
+                        raise RuntimeError(f"Video generation failed: {update.failure_reason}")
+                    return
+            except RuntimeError:
+                # Re-raise RuntimeError (permanent failures)
+                raise
+            except Exception as e:
+                # Log polling errors but continue trying
+                logger.warning(
+                    f"Error polling status for video {video.id} (attempt {attempt + 1}/{settings.video_status_max_polls}): {e}",
+                    extra={"video_id": str(video.id), "attempt": attempt + 1},
+                    exc_info=True
+                )
+                # If this is the last attempt, raise the error
+                if attempt == settings.video_status_max_polls - 1:
+                    raise RuntimeError(f"Failed to poll video status after {settings.video_status_max_polls} attempts: {e}") from e
 
-        raise RuntimeError("Video generation timed out")
+        error_msg = f"Video generation timed out after {settings.video_status_max_polls} polling attempts"
+        logger.error(error_msg, extra={"video_id": str(video.id)})
+        raise asyncio.TimeoutError(error_msg)
 
     async def _apply_status_update(self, session: AsyncSession, video: Video, update: FlowStatusUpdate) -> None:
         if update.status is not None:
@@ -161,7 +207,22 @@ class VideoQueue:
         if update.failure_reason:
             video.failure_reason = update.failure_reason
 
-        await self._storage_service.handle_status_update(session, video, update)
+        try:
+            await self._storage_service.handle_status_update(session, video, update)
+        except RuntimeError as e:
+            # Storage errors are permanent failures
+            logger.error(f"Storage error for video {video.id}: {e}", extra={"video_id": str(video.id)})
+            video.status = VideoStatus.FAILED
+            video.failure_reason = str(e)
+            raise
+        except Exception as e:
+            # Unexpected storage errors
+            error_msg = f"Unexpected storage error: {e}"
+            logger.error(f"Unexpected storage error for video {video.id}: {e}", extra={"video_id": str(video.id)}, exc_info=True)
+            video.status = VideoStatus.FAILED
+            video.failure_reason = error_msg
+            raise RuntimeError(error_msg) from e
+        
         profile = await session.get(Profile, video.user_id)
         if profile:
             if update.status == VideoStatus.COMPLETED:
@@ -172,9 +233,25 @@ class VideoQueue:
         await session.commit()
 
     async def _mark_failed(self, session: AsyncSession, video: Video, *, reason: str | None) -> None:
+        """Mark video as failed with descriptive error message."""
         video.status = VideoStatus.FAILED
-        video.failure_reason = reason
-        await session.commit()
+        video.failure_reason = reason or "Unknown error occurred during video generation"
+        video.ranking_score = calculate_ranking_score(video)
+        
+        logger.error(
+            f"Marking video {video.id} as failed: {video.failure_reason}",
+            extra={"video_id": str(video.id), "failure_reason": video.failure_reason}
+        )
+        
+        try:
+            await session.commit()
+        except Exception as e:
+            logger.error(f"Failed to commit failure status for video {video.id}: {e}", extra={"video_id": str(video.id)}, exc_info=True)
+            # Try to rollback and commit again
+            await session.rollback()
+            video.status = VideoStatus.FAILED
+            video.failure_reason = reason or "Unknown error occurred during video generation"
+            await session.commit()
 
     async def _load_video(self, session: AsyncSession, video_id: uuid.UUID) -> Video | None:
         # wait briefly for the record to become visible if the enqueue happened before commit
