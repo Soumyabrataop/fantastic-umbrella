@@ -1,0 +1,28 @@
+{
+  "name": "goldpool Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/pnpm:1": {
+      "version": "8"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "workspaceFolder": "/workspaces/goldpool",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/goldpool,type=bind,consistency=cached",
+  "postCreateCommand": "pnpm install --frozen-lockfile",
+  "postStartCommand": "bash .devcontainer/start-dev.sh",
+  "forwardPorts": [3000, 8000],
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.shell.linux": "/bin/bash"
+      }
+    }
+  }
+}
