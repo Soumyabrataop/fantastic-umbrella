@@ -1,27 +1,46 @@
 {
-  "name": "goldpool Dev Container",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "name": "Zappai Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/base:debian-12",
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    },
-    "ghcr.io/devcontainers/features/pnpm:1": {
-      "version": "8"
+      "version": "20",
+      "pnpm": "8"
     },
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
     }
   },
-  "workspaceFolder": "/workspaces/goldpool",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/goldpool,type=bind,consistency=cached",
-  "postCreateCommand": "pnpm install --frozen-lockfile",
+  "workspaceFolder": "/workspaces/fantastic-umbrella",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/fantastic-umbrella,type=bind,consistency=cached",
+  
+  // Persists pnpm cache for lightning-fast node_module installs
+  "mounts": [
+    "source=pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume"
+  ],
+
+  // Runs ONCE when container is created. Installs ALL dependencies.
+  "postCreateCommand": [
+    "echo 'Setting up Python venv and installing dependencies...'",
+    "python3 -m venv .venv",
+    ". .venv/bin/activate",
+    "pip install --no-cache-dir -r backend/requirements.txt",
+    "echo 'Installing Node.js dependencies (using cache)...'",
+    "pnpm install --frozen-lockfile"
+  ],
+
+  // Runs EVERY time container starts. Only starts servers.
   "postStartCommand": "bash .devcontainer/start-dev.sh",
+
   "forwardPorts": [3000, 8000],
   "remoteUser": "vscode",
   "customizations": {
     "vscode": {
       "settings": {
-        "terminal.integrated.shell.linux": "/bin/bash"
+        // Use bash for the integrated terminal
+        "terminal.integrated.shell.linux": "/bin/bash",
+        // Automatically find and use the Python interpreter in your venv
+        "python.defaultInterpreterPath": ".venv/bin/python",
+        "python.terminal.activateEnvironment": true
       }
     }
   }
