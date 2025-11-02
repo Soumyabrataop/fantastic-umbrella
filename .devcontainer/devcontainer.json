@@ -16,14 +16,7 @@
   ],
 
   // Runs ONCE when container is created. Installs ALL dependencies.
-  "postCreateCommand": [
-    "echo 'Setting up Python venv and installing dependencies...'",
-    "python3 -m venv .venv",
-    ". .venv/bin/activate",
-    "pip install --no-cache-dir -r backend/requirements.txt",
-    "echo 'Installing Node.js dependencies (using cache)...'",
-    "pnpm install --frozen-lockfile"
-  ],
+  "postCreateCommand": "echo 'Setting up Python venv...' && python3 -m venv .venv && echo 'Installing Python dependencies into .venv...' && .venv/bin/pip install --no-cache-dir -r backend/requirements.txt && echo 'Installing Node.js dependencies (using cache)...' && pnpm install --no-frozen-lockfile",
 
   // Runs EVERY time container starts. Only starts servers.
   "postStartCommand": "bash .devcontainer/start-dev.sh",
