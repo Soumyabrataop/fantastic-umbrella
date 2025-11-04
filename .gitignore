@@ -11,10 +11,15 @@ npm-debug.log*
 __pycache__/
 log*.txt
 cookie.json
+cookie_backup*.json
 session_dump.json
 media/
 flow_meta.json
 gen.json
-
+playwright-data/
+browser_data/
 backend/my-ai-460612-c375c19c0b1d.json
+backend/.env
 .kiro
+.env.local
+my-ai-460612-c375c19c0b1d (2).json

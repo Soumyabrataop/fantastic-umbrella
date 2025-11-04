@@ -32,6 +32,11 @@ class SessionData:
     user: Dict[str, Any]
 
 
+class CookieExpiredError(Exception):
+    """Raised when session cookies are expired or invalid."""
+    pass
+
+
 class TokenRefresher:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -47,6 +52,11 @@ class TokenRefresher:
             raise RuntimeError(f"Session fetch failed ({response.status_code}): {response.text}")
 
         payload = response.json()
+        
+        # Check if session API returned empty object or missing fields (indicates expired cookies)
+        if not payload or "access_token" not in payload:
+            raise CookieExpiredError("Session API returned empty/invalid response - cookies likely expired")
+        
         try:
             expires = datetime.fromisoformat(payload["expires"].replace("Z", "+00:00"))
             return SessionData(
@@ -55,7 +65,7 @@ class TokenRefresher:
                 user=payload["user"],
             )
         except KeyError as exc:
-            raise RuntimeError(f"Session payload missing field: {exc}") from exc
+            raise CookieExpiredError(f"Session payload missing field: {exc}") from exc
 
     def persist_token(self, session: SessionData) -> None:
         entries = load_cookie_entries(self.settings.flow_cookie_file)
