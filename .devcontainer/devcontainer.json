@@ -1,0 +1,37 @@
+{
+  "name": "Zappai Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20",
+      "pnpm": "8"
+    }
+  },
+  "workspaceFolder": "/workspaces/fantastic-umbrella",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/fantastic-umbrella,type=bind,consistency=cached",
+  
+  // Persists pnpm cache for lightning-fast node_module installs
+  "mounts": [
+    "source=pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume"
+  ],
+
+  // Runs ONCE when container is created. Installs ALL dependencies.
+  "postCreateCommand": "echo 'Setting up Python venv...' && python3 -m venv .venv && echo 'Installing Python dependencies into .venv...' && .venv/bin/pip install --no-cache-dir -r backend/requirements.txt && echo 'Installing Node.js dependencies (using cache)...' && pnpm install --no-frozen-lockfile",
+
+  // Runs EVERY time container starts. Only starts servers.
+  "postStartCommand": "bash .devcontainer/start-dev.sh",
+
+  "forwardPorts": [3000, 8000],
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // Use bash for the integrated terminal
+        "terminal.integrated.shell.linux": "/bin/bash",
+        // Automatically find and use the Python interpreter in your venv
+        "python.defaultInterpreterPath": ".venv/bin/python",
+        "python.terminal.activateEnvironment": true
+      }
+    }
+  }
+}
