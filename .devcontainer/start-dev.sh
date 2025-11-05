@@ -8,7 +8,13 @@ mkdir -p "$LOG_DIR"
 
 # --- Activate Python ---
 echo "Activating Python virtual environment..."
-source "$ROOT/.venv/bin/activate"
+if [ -f "$ROOT/.venv/bin/activate" ]; then
+    source "$ROOT/.venv/bin/activate"
+else
+    echo "Error: Python virtual environment not found at $ROOT/.venv/bin/activate"
+    echo "Please run 'python -m venv .venv' in $ROOT and install dependencies before starting."
+    exit 1
+fi
 
 # --- Start Backend ---
 echo "Starting backend (uvicorn) on port 8000..."
