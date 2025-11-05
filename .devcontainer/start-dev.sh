@@ -23,8 +23,18 @@ echo "Starting backend (uvicorn) on port 8000..."
 
 # --- Start Frontend ---
 echo "Starting frontend (Next.js) on port 3000..."
-# start frontend in background and redirect logs
-(cd "$ROOT/apps/web" && nohup pnpm dev > "$LOG_DIR/frontend.log" 2>&1 &)
+# start frontend in background and redirect logs, capture PID
+(cd "$ROOT/apps/web" && nohup pnpm dev > "$LOG_DIR/frontend.log" 2>&1 & echo $! > "$LOG_DIR/frontend.pid")
+
+# Check if frontend started successfully
+FRONTEND_PID=$(cat "$LOG_DIR/frontend.pid")
+sleep 2  # Give it a moment to start
+
+if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
+    echo "ERROR: Frontend (Next.js) failed to start. Check logs below:"
+    tail -n 20 "$LOG_DIR/frontend.log"
+    exit 1
+fi
 
 echo "Both processes started."
 echo "Backend logs:   $LOG_DIR/backend.log"
