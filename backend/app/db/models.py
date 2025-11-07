@@ -77,6 +77,9 @@ class Video(Base, TimestampMixin):
         default=VideoStatus.PENDING,
         nullable=False,
     )
+    is_published: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
+    google_drive_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    google_drive_thumbnail_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     likes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dislikes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     views_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -159,6 +162,10 @@ class Profile(Base, TimestampMixin):
     videos_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_likes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_dislikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Google OAuth tokens
+    google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("videos_created >= 0", name="ck_profiles_videos_created_non_negative"),

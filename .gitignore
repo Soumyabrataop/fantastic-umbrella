@@ -23,3 +23,5 @@ backend/.env
 .kiro
 .env.local
 my-ai-460612-c375c19c0b1d (2).json
+
+*flow_session_backup.json

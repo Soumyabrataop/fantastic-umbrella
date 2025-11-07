@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Google Labs Flow - Headless Cookie Extraction
 
@@ -27,11 +28,31 @@ Security Notes:
 
 import json
 import os
-import time
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
+from dotenv import load_dotenv
+
+# Force UTF-8 encoding for stdout/stderr when run as subprocess
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8')
+
+# Load environment variables from .env file
+SCRIPT_DIR = Path(__file__).parent
+BACKEND_DIR = SCRIPT_DIR.parent
+ENV_FILE = BACKEND_DIR / ".env"
+
+# Load .env file if it exists
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+    print(f"[OK] Loaded environment from: {ENV_FILE}")
+else:
+    print(f"[WARN] No .env file found at: {ENV_FILE}")
+    print("   Using system environment variables")
 
 # Configuration
 GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL', '').strip('"').strip("'")
@@ -41,9 +62,7 @@ GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD', '').strip('"').strip("'")
 GOOGLE_LABS_FLOW_URL = "https://labs.google/fx/tools/flow"
 SESSION_API_URL = "https://labs.google/fx/api/auth/session"
 
-# Paths
-SCRIPT_DIR = Path(__file__).parent
-BACKEND_DIR = SCRIPT_DIR.parent
+# Paths (already defined above but kept for clarity)
 COOKIE_FILE = BACKEND_DIR / "cookie.json"
 BACKUP_FILE = BACKEND_DIR / "flow_session_backup.json"
 BROWSER_DATA_DIR = SCRIPT_DIR / "browser_data"
@@ -156,11 +175,17 @@ def extract_flow_cookie_headless(email: str, password: str):
                         print("   ✅ Existing valid session found!")
                         print(f"   Token: {access_token[:60]}...")
                         
+                        # Extract ALL browser cookies even for existing session
+                        print("   ➜ Extracting all browser cookies...")
+                        all_cookies = context.cookies()
+                        print(f"   ✓ Found {len(all_cookies)} cookies")
+                        
                         cookie_data = {
                             'access_token': access_token,
                             'expires': session_data.get('expires', ''),
                             'extracted_at': datetime.now().isoformat(),
-                            'method': 'existing_session'
+                            'method': 'existing_session',
+                            'all_cookies': all_cookies  # Include all cookies
                         }
                         
                         context.close()
