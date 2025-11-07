@@ -5,9 +5,11 @@ import logging
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import flow_client, router, storage_service
+from app.api.auth_routes import router as auth_router
 from app.core.settings import get_settings
 from app.db.session import get_session_factory, init_database
 from app.services.cookie_refresher import CookieRefresher
@@ -57,6 +59,25 @@ async def lifespan(app: FastAPI):
                     # Exponential backoff for cookie refresh failures (max 1 hour)
                     delay = min(60.0 * (2 ** consecutive_cookie_failures), 3600.0)
                     logger.warning("⏳ Retrying in %.0f seconds", delay)
+            
+            except (FileNotFoundError, ValueError) as exc:
+                # Cookie file missing or invalid - trigger immediate full refresh
+                error_msg = str(exc)
+                logger.error("❌ Cookie file issue: %s", error_msg)
+                logger.info("🔄 Triggering immediate full cookie refresh to create/fix cookie.json...")
+                
+                try:
+                    await cookie_refresher.refresh_now()
+                    logger.info("✅ Cookie refresh successful - will retry token refresh in 10 seconds")
+                    delay = 10.0  # Retry token refresh shortly after cookie refresh
+                    consecutive_cookie_failures = 0
+                except Exception as refresh_exc:
+                    consecutive_cookie_failures += 1
+                    logger.error("❌ Cookie refresh failed (%s) - attempt %d", refresh_exc, consecutive_cookie_failures)
+                    
+                    # Exponential backoff for cookie refresh failures (max 1 hour)
+                    delay = min(60.0 * (2 ** consecutive_cookie_failures), 3600.0)
+                    logger.warning("⏳ Retrying in %.0f seconds", delay)
                     
             except Exception as exc:  # noqa: BLE001 - want to log any failure
                 logger.warning("Token refresh failed (%s); retrying in %s seconds", exc, delay)
@@ -69,6 +90,18 @@ async def lifespan(app: FastAPI):
     refresh_task = asyncio.create_task(refresh_loop(), name="token-refresh")
     try:
         await init_database()
+        
+        # Check if cookie.json exists on startup
+        if not settings.flow_cookie_file.exists():
+            logger.warning("⚠️  cookie.json not found on startup!")
+            logger.info("🔄 Running initial cookie refresh to create cookie.json...")
+            try:
+                await cookie_refresher.refresh_now()
+                logger.info("✅ Initial cookie refresh successful")
+            except Exception as exc:
+                logger.error("❌ Initial cookie refresh failed: %s", exc)
+                logger.warning("⚠️  Backend will retry periodically via token refresh loop")
+        
         await cookie_refresher.start()  # Start 21-hour cookie refresh loop
         await video_queue.start()
         logger.info("Video queue worker scheduled")
@@ -84,7 +117,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Flow Veo3 Proxy", version="0.2.0", lifespan=lifespan)
+
+# Add CORS middleware to allow frontend to make requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(router)
+app.include_router(auth_router)  # Add Google OAuth routes
 
 settings = get_settings()
 if settings.media_storage_backend == "local":

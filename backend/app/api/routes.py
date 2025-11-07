@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -53,6 +55,7 @@ from app.utils.ranking import calculate_creator_score, calculate_ranking_score
 router = APIRouter()
 flow_client = FlowClient()
 storage_service = StorageService()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health")
@@ -203,9 +206,7 @@ async def sync_video_status(
 
     await session.flush()
     
-    # Refresh signed URLs if needed before returning
-    await storage_service.refresh_signed_urls(session, video)
-    
+    # No need to refresh URLs - we use public URLs that don't expire
     return _serialize_video(video, creator=owner_profile)
 
 
@@ -222,7 +223,10 @@ async def get_feed(
             selectinload(Video.creator),
             selectinload(Video.assets),
         )
-        .where(Video.status == VideoStatus.COMPLETED)
+        .where(
+            Video.status == VideoStatus.COMPLETED,
+            Video.is_published == True,  # Only show published videos in feed
+        )
         .order_by(ranking_expr.desc(), Video.created_at.desc(), Video.id.desc())
     )
 
@@ -249,10 +253,7 @@ async def get_feed(
     has_more = len(videos) > limit
     items = videos[:limit]
 
-    # Refresh signed URLs for all videos if needed
-    for video in items:
-        await storage_service.refresh_signed_urls(session, video)
-
+    # No need to refresh URLs - we use public URLs that don't expire
     serialized = [_serialize_video(video) for video in items]
     next_cursor = _encode_cursor(items[-1]) if has_more and items else None
     return FeedResponse(videos=serialized, next_cursor=next_cursor, has_more=has_more)
@@ -264,7 +265,103 @@ async def get_video_detail(
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
     video = await _get_video(session, video_id)
-    await storage_service.refresh_signed_urls(session, video)
+    # No need to refresh URLs - we use public URLs that don't expire
+    return _serialize_video(video)
+
+
+@router.post("/videos/{video_id}/publish")
+async def publish_video(
+    video_id: uuid.UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> VideoRead:
+    """
+    Publish a video - makes it visible in feed and sets Drive file permissions to public.
+    """
+    video = await _get_video(session, video_id)
+    
+    # Check ownership
+    if video.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to publish this video")
+    
+    # Already published
+    if video.is_published:
+        return _serialize_video(video)
+    
+    # Get Drive service to update permissions
+    drive_service = await storage_service.get_drive_service_for_user(session, user.id)
+    
+    if drive_service:
+        try:
+            # Make Drive files public
+            if video.google_drive_file_id:
+                await asyncio.to_thread(drive_service.make_public, video.google_drive_file_id)
+                logger.info(f"Made video {video_id} public on Drive: {video.google_drive_file_id}")
+            
+            if video.google_drive_thumbnail_id:
+                await asyncio.to_thread(drive_service.make_public, video.google_drive_thumbnail_id)
+                logger.info(f"Made thumbnail for video {video_id} public on Drive: {video.google_drive_thumbnail_id}")
+        except Exception as e:
+            logger.error(f"Failed to update Drive permissions for video {video_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update Drive permissions"
+            )
+    
+    # Mark as published
+    video.is_published = True
+    session.add(video)
+    await session.commit()
+    
+    logger.info(f"Published video {video_id}")
+    return _serialize_video(video)
+
+
+@router.post("/videos/{video_id}/unpublish")
+async def unpublish_video(
+    video_id: uuid.UUID,
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> VideoRead:
+    """
+    Unpublish a video - removes it from feed and sets Drive file permissions to private.
+    """
+    video = await _get_video(session, video_id)
+    
+    # Check ownership
+    if video.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to unpublish this video")
+    
+    # Already unpublished
+    if not video.is_published:
+        return _serialize_video(video)
+    
+    # Get Drive service to update permissions
+    drive_service = await storage_service.get_drive_service_for_user(session, user.id)
+    
+    if drive_service:
+        try:
+            # Make Drive files private
+            if video.google_drive_file_id:
+                await asyncio.to_thread(drive_service.make_private, video.google_drive_file_id)
+                logger.info(f"Made video {video_id} private on Drive: {video.google_drive_file_id}")
+            
+            if video.google_drive_thumbnail_id:
+                await asyncio.to_thread(drive_service.make_private, video.google_drive_thumbnail_id)
+                logger.info(f"Made thumbnail for video {video_id} private on Drive: {video.google_drive_thumbnail_id}")
+        except Exception as e:
+            logger.error(f"Failed to update Drive permissions for video {video_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update Drive permissions"
+            )
+    
+    # Mark as unpublished
+    video.is_published = False
+    session.add(video)
+    await session.commit()
+    
+    logger.info(f"Unpublished video {video_id}")
     return _serialize_video(video)
 
 
@@ -435,10 +532,7 @@ async def list_user_videos(
     )
     videos = rows.scalars().all()
     
-    # Refresh signed URLs for all videos if needed
-    for video in videos:
-        await storage_service.refresh_signed_urls(session, video)
-    
+    # No need to refresh URLs - we use public URLs that don't expire
     return [_serialize_video(video) for video in videos]
 
 
@@ -459,10 +553,7 @@ async def list_liked_videos(
     )
     videos = rows.scalars().all()
     
-    # Refresh signed URLs for all videos if needed
-    for video in videos:
-        await storage_service.refresh_signed_urls(session, video)
-    
+    # No need to refresh URLs - we use public URLs that don't expire
     return [_serialize_video(video) for video in videos]
 
 

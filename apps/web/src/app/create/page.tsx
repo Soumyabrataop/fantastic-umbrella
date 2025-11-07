@@ -8,6 +8,7 @@ import { useVideoActions } from "@/hooks/useVideoActions";
 import { videoAPI, Video, getPreferredVideoUrl } from "@/utils/api";
 import { toast } from "@/utils/toast";
 import Loader from "@/components/Loader";
+import ConnectDrive from "@/components/ConnectDrive";
 
 const POLL_INTERVAL_MS = 5000;
 const PROGRESS_INTERVAL_MS = 1500;
@@ -398,7 +399,12 @@ export default function CreatePage() {
 
         {/* Input Stage */}
         {stage === "input" && (
-          <div className="space-y-4 animate-fade-slide-up">
+          <div className="space-y-6 animate-fade-slide-up">
+            {/* Drive Connection Status - MUST CONNECT FIRST */}
+            <div className="mb-6">
+              <ConnectDrive />
+            </div>
+
             {/* Title */}
             <div className="text-center mb-6">
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 drop-shadow-lg">

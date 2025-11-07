@@ -5,4 +5,10 @@ python-dotenv
 pydantic
 SQLAlchemy>=2.0
 asyncpg
-google-cloud-storage
+# Google OAuth & Drive API
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+# Browser automation for cookie refresh
+playwright

@@ -34,10 +34,12 @@ class Settings:
     media_storage_backend: str
     media_root: Path
     media_public_base: str
-    gcp_project_id: str | None
-    gcp_media_bucket: str | None
-    gcp_credentials_path: str | None
-    gcp_signed_url_expiration: int
+    # Google OAuth & Drive
+    google_client_id: str
+    google_client_secret: str
+    google_redirect_uri: str
+    google_drive_folder_name: str
+    # Security
     request_signature_secret: str | None
     request_signature_header: str
     request_timestamp_header: str
@@ -111,10 +113,12 @@ def get_settings() -> Settings:
         media_storage_backend=media_backend,
         media_root=media_root,
         media_public_base=media_public_base.rstrip("/"),
-        gcp_project_id=os.environ.get("GCP_PROJECT_ID"),
-        gcp_media_bucket=os.environ.get("GCP_MEDIA_BUCKET"),
-        gcp_credentials_path=os.environ.get("GCP_CREDENTIALS_PATH"),
-        gcp_signed_url_expiration=_int_env("GCP_SIGNED_URL_EXPIRATION", default=3600, minimum=60),
+        # Google OAuth & Drive
+        google_client_id=_get_env("GOOGLE_CLIENT_ID"),
+        google_client_secret=_get_env("GOOGLE_CLIENT_SECRET"),
+        google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"),
+        google_drive_folder_name=os.environ.get("GOOGLE_DRIVE_FOLDER_NAME", "InstaVEO Videos"),
+        # Security
         request_signature_secret=request_signature_secret,
         request_signature_header=request_signature_header,
         request_timestamp_header=request_timestamp_header,
