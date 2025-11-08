@@ -14,7 +14,7 @@ export default function AuthPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (user && !authLoading) {
-      router.push("/feed");
+      router.push("/profile");
     }
   }, [user, authLoading, router]);
 
@@ -37,34 +37,24 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 dark:from-gray-900 dark:via-purple-900 dark:to-gray-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo/Brand */}
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-3">
-            InstaVEO
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-lg">
-            Create AI videos, share with the world
-          </p>
+          <h1 className="text-5xl font-bold text-white mb-3">Zapp AI</h1>
+          <p className="text-gray-400 text-lg">Create viral videos with AI</p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
+        <div className="bg-gray-900 rounded-3xl shadow-2xl p-8 border border-gray-800">
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Welcome!
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Sign in to start creating videos
-            </p>
+            <h2 className="text-2xl font-bold text-white mb-2">Welcome!</h2>
+            <p className="text-gray-400">Sign in to start creating videos</p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-red-600 dark:text-red-400 text-sm font-medium">
-                {error}
-              </p>
+            <div className="mb-4 p-3 bg-red-900/20 border border-red-800 rounded-lg">
+              <p className="text-red-400 text-sm font-medium">{error}</p>
             </div>
           )}
 
@@ -72,7 +62,7 @@ export default function AuthPage() {
           <button
             onClick={handleGoogleSignIn}
             disabled={loading || authLoading}
-            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white dark:bg-gray-700 border-2 border-gray-300 dark:border-gray-600 rounded-xl font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 hover:border-gray-400 dark:hover:border-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-white border-2 border-gray-300 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
           >
             {loading || authLoading ? (
               <>
@@ -105,7 +95,7 @@ export default function AuthPage() {
           </button>
 
           {/* Privacy Notice */}
-          <p className="mt-6 text-xs text-center text-gray-500 dark:text-gray-400">
+          <p className="mt-6 text-xs text-center text-gray-400">
             By continuing, you agree to store your videos in your Google Drive.
             <br />
             We'll ask for Drive permissions after you sign in.
@@ -114,23 +104,17 @@ export default function AuthPage() {
 
         {/* Features */}
         <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-          <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+          <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur border border-gray-700">
             <div className="text-2xl mb-1">🎨</div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-              AI-Powered
-            </p>
+            <p className="text-xs text-gray-300 font-medium">AI-Powered</p>
           </div>
-          <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+          <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur border border-gray-700">
             <div className="text-2xl mb-1">🔒</div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-              Your Drive
-            </p>
+            <p className="text-xs text-gray-300 font-medium">Your Drive</p>
           </div>
-          <div className="p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+          <div className="p-3 bg-gray-800/50 rounded-xl backdrop-blur border border-gray-700">
             <div className="text-2xl mb-1">🚀</div>
-            <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-              Instant Share
-            </p>
+            <p className="text-xs text-gray-300 font-medium">Instant Share</p>
           </div>
         </div>
       </div>

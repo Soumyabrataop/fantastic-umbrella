@@ -21,8 +21,8 @@ export default function AuthCallbackPage() {
 
           if (error) throw error;
 
-          // Successful login - redirect to feed
-          router.push("/feed");
+          // Successful login - redirect to profile
+          router.push("/profile");
         } else {
           // No code - might be an error
           const errorParam = params.get("error");

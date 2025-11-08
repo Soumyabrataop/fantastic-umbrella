@@ -86,89 +86,52 @@ export default function ProfilePage() {
   const isLoading = activeTab === "videos" ? videosLoading : likedLoading;
 
   return (
-    <div className="min-h-screen bg-[#1A1423] pb-24 retro-scanlines">
-      {/* Retro Grid Background */}
-      <div className="fixed inset-0 opacity-10">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `
-            linear-gradient(#9D4EDD 1px, transparent 1px),
-            linear-gradient(90deg, #9D4EDD 1px, transparent 1px)
-          `,
-            backgroundSize: "50px 50px",
-          }}
-        ></div>
-      </div>
-
+    <div className="min-h-screen bg-black pb-24">
       {/* Header */}
-      <header
-        className="bg-[#240046] border-b-4 border-[#06FFA5] sticky top-0 z-40"
-        style={{
-          boxShadow: "0 0 20px rgba(6, 255, 165, 0.5)",
-        }}
-      >
-        <div className="max-w-5xl mx-auto px-4 py-4">
-          <h1
-            className="text-2xl font-['Press_Start_2P'] text-[#06FFA5] retro-glow"
-            style={{ fontSize: "16px" }}
-          >
-            ● PROFILE ●
-          </h1>
+      <header className="bg-gradient-to-r from-gray-900 to-black border-b border-gray-800 sticky top-0 z-40 backdrop-blur-xl">
+        <div className="max-w-5xl mx-auto px-6 py-6">
+          <h1 className="text-3xl font-bold text-white">Profile</h1>
         </div>
       </header>
 
       {/* Profile Info */}
-      <div className="bg-[#240046] border-b-4 border-[#9D4EDD] relative">
+      <div className="bg-gradient-to-b from-gray-900 to-black border-b border-gray-800 relative">
         <div className="max-w-5xl mx-auto px-4 py-6">
           {/* Profile Error State */}
           {profileError ? (
-            <div className="text-center py-8">
-              <div className="retro-card p-6 max-w-md mx-auto bg-[#0D0221]">
-                <div className="text-6xl mb-4 text-[#FF006E] retro-glow">⚠</div>
-                <h2
-                  className="text-xl font-['Press_Start_2P'] text-[#FF006E] mb-3"
-                  style={{ fontSize: "12px" }}
-                >
-                  ERROR LOADING PROFILE
+            <div className="text-center py-12">
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 max-w-md mx-auto">
+                <div className="text-6xl mb-4">⚠️</div>
+                <h2 className="text-xl font-bold text-red-500 mb-3">
+                  Error Loading Profile
                 </h2>
-                <p className="text-[#00F5FF] text-lg font-['VT323'] mb-4">
+                <p className="text-gray-400 text-sm mb-6">
                   {profileError instanceof Error
                     ? profileError.message
                     : "Failed to load profile"}
                 </p>
                 <button
                   onClick={() => refetchProfile()}
-                  className="retro-btn text-xs"
+                  className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg hover:shadow-purple-500/50 transition-all"
                 >
-                  ✦ RETRY ✦
+                  Retry
                 </button>
               </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-4 mb-6">
+              <div className="flex flex-col md:flex-row items-center gap-6 mb-8">
                 {/* Avatar */}
-                <div
-                  className="w-20 h-20 pixel-corners retro-card flex items-center justify-center text-[#FFBE0B] text-3xl font-['Press_Start_2P']"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #FF006E 0%, #9D4EDD 100%)",
-                    boxShadow: "0 0 20px rgba(0, 245, 255, 0.5)",
-                  }}
-                >
+                <div className="w-24 h-24 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg shadow-purple-500/50">
                   {user.email?.[0].toUpperCase()}
                 </div>
 
                 {/* User Info */}
-                <div className="flex-1">
-                  <h2
-                    className="text-xl font-['Press_Start_2P'] text-[#00F5FF] mb-2 retro-glow"
-                    style={{ fontSize: "14px" }}
-                  >
+                <div className="flex-1 text-center md:text-left">
+                  <h2 className="text-2xl font-bold text-white mb-2">
                     {profile?.username || user.email?.split("@")[0]}
                   </h2>
-                  <p className="text-[#9D4EDD] text-sm font-['VT323']">
+                  <p className="text-gray-400 text-sm">
                     {profile?.email || user.email}
                   </p>
                 </div>
@@ -176,32 +139,16 @@ export default function ProfilePage() {
                 {/* Sign Out Button */}
                 <button
                   onClick={handleSignOut}
-                  className="px-4 py-2 bg-[#0D0221] border-2 border-[#FF006E] font-['Press_Start_2P'] text-[#FF006E] hover:scale-105 transition-transform"
-                  style={{
-                    fontSize: "10px",
-                    boxShadow: "0 0 10px rgba(255, 0, 110, 0.3)",
-                  }}
+                  className="px-6 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
                 >
-                  LOGOUT
+                  Sign Out
                 </button>
               </div>
 
-              {/* Stats - Display real statistics from profile */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="flex gap-4 mb-6">
                 <div className="retro-card p-4 text-center bg-[#0D0221]">
                   <div
-                    className="text-3xl font-['Press_Start_2P'] text-[#FFBE0B] retro-glow"
-                    style={{ fontSize: "20px" }}
-                  >
-                    {profile?.videosCreated ?? 0}
-                  </div>
-                  <div className="text-sm font-['VT323'] text-[#9D4EDD] mt-1">
-                    VIDEOS
-                  </div>
-                </div>
-                <div className="retro-card p-4 text-center bg-[#0D0221]">
-                  <div
-                    className="text-3xl font-['Press_Start_2P'] text-[#06FFA5] retro-glow"
+                    className="text-3xl font-['Press_Start_2P'] text-[#FF006E] retro-glow"
                     style={{ fontSize: "20px" }}
                   >
                     {profile?.totalLikes ?? 0}
@@ -255,65 +202,53 @@ export default function ProfilePage() {
 
       {/* Videos Grid - Only show if profile loaded successfully */}
       {!profileError && (
-        <div className="max-w-5xl mx-auto px-4 py-6 relative">
+        <div className="max-w-5xl mx-auto px-6 py-8 relative">
           {/* Error State */}
           {currentError ? (
             <div className="text-center py-12">
-              <div className="retro-card p-8 max-w-md mx-auto bg-[#0D0221]">
-                <div className="text-8xl mb-6 text-[#FF006E] retro-glow">⚠</div>
-                <h2
-                  className="text-2xl font-['Press_Start_2P'] text-[#FF006E] mb-4"
-                  style={{ fontSize: "14px" }}
-                >
-                  ERROR LOADING VIDEOS
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 max-w-md mx-auto">
+                <div className="text-6xl mb-6">⚠️</div>
+                <h2 className="text-xl font-bold text-red-500 mb-4">
+                  Error Loading Videos
                 </h2>
-                <p className="text-[#00F5FF] text-xl font-['VT323'] mb-6">
+                <p className="text-gray-400 text-sm mb-6">
                   {currentError instanceof Error
                     ? currentError.message
                     : "Failed to load videos"}
                 </p>
-                <button onClick={() => currentRefetch()} className="retro-btn">
-                  ✦ RETRY ✦
+                <button
+                  onClick={() => currentRefetch()}
+                  className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg hover:shadow-purple-500/50 transition-all"
+                >
+                  Retry
                 </button>
               </div>
             </div>
           ) : isLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
-              <div className="text-[#00F5FF] text-6xl mb-4 retro-glow font-['Press_Start_2P']">
-                ▓▓▓
-              </div>
-              <p className="text-[#FFBE0B] text-2xl font-['VT323']">
-                LOADING VIDEOS...
-              </p>
+              <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-gray-400 text-lg">Loading videos...</p>
             </div>
           ) : videos.length === 0 ? (
             <div className="text-center py-12">
-              <div className="retro-card p-8 max-w-md mx-auto">
-                <div
-                  className="text-8xl mb-6 retro-glow"
-                  style={{
-                    color: activeTab === "videos" ? "#00F5FF" : "#FF006E",
-                  }}
-                >
-                  {activeTab === "videos" ? "◈" : "♥"}
+              <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 max-w-md mx-auto">
+                <div className="text-6xl mb-6">
+                  {activeTab === "videos" ? "🎬" : "❤️"}
                 </div>
-                <h2
-                  className="text-2xl font-['Press_Start_2P'] text-[#FFBE0B] mb-4"
-                  style={{ fontSize: "14px" }}
-                >
-                  {activeTab === "videos" ? "NO VIDEOS YET" : "NO LIKED VIDEOS"}
+                <h2 className="text-xl font-bold text-white mb-4">
+                  {activeTab === "videos" ? "No Videos Yet" : "No Liked Videos"}
                 </h2>
-                <p className="text-[#00F5FF] text-xl font-['VT323'] mb-6">
+                <p className="text-gray-400 text-sm mb-6">
                   {activeTab === "videos"
-                    ? "CREATE YOUR FIRST AI VIDEO"
-                    : "START LIKING VIDEOS"}
+                    ? "Create your first AI video"
+                    : "Start liking videos"}
                 </p>
                 {activeTab === "videos" && (
                   <button
                     onClick={() => router.push("/create")}
-                    className="retro-btn"
+                    className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg hover:shadow-purple-500/50 transition-all"
                   >
-                    ✦ CREATE NOW ✦
+                    Create Now
                   </button>
                 )}
               </div>
