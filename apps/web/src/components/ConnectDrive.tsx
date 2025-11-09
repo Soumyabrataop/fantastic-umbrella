@@ -36,14 +36,15 @@ export default function ConnectDrive() {
     }
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/google/status`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
+      // Use the Next.js dev proxy so the Authorization header is forwarded
+      // to the backend. This allows the backend to associate the OAuth state
+      // with the authenticated Supabase user.
+      const proxyPath = `/api/backend/auth/google/status`;
+      const response = await fetch(proxyPath, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (!response.ok) throw new Error("Failed to check Drive status");
 
@@ -57,9 +58,39 @@ export default function ConnectDrive() {
     }
   };
 
-  const connectDrive = () => {
-    // Redirect to backend OAuth endpoint
-    window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/api/auth/google/login`;
+  const connectDrive = async () => {
+    if (!session?.access_token) {
+      setError("You must be signed in to connect Google Drive.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const proxyPath = `/api/backend/auth/google/initiate`;
+      const resp = await fetch(proxyPath, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "content-type": "application/json",
+        },
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Failed to initiate Drive connect: ${text}`);
+      }
+
+      const data = await resp.json();
+      if (!data?.url) throw new Error("Invalid response from server");
+
+      // Redirect the browser to Google's consent screen URL returned by the backend
+      window.location.href = data.url;
+    } catch (err: any) {
+      console.error("Connect Drive error:", err);
+      setError(err.message || "Failed to initiate Drive connection");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const disconnectDrive = async () => {
@@ -67,15 +98,13 @@ export default function ConnectDrive() {
 
     try {
       setLoading(true);
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/auth/google/disconnect`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
+      const proxyPath = `/api/backend/auth/google/disconnect`;
+      const response = await fetch(proxyPath, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
       if (!response.ok) throw new Error("Failed to disconnect Drive");
 

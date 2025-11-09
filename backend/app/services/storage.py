@@ -249,7 +249,7 @@ class StorageService:
             )
             
             # Get Drive URL
-            drive_url = drive_service.get_embed_url(file_id)
+            drive_url = drive_service.get_file_url(file_id)
             
             # Clean up temp file
             try:

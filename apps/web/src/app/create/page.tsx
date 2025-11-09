@@ -300,8 +300,21 @@ export default function CreatePage() {
     }
   };
 
-  const handlePublish = () => {
-    router.push("/feed");
+  const handlePublish = async () => {
+    if (!pollingVideoId) {
+      window.alert("Video is not ready to publish yet.");
+      return;
+    }
+
+    try {
+      await videoAPI.publishVideo(pollingVideoId);
+      toast.success("Video published successfully!");
+      router.push("/feed");
+    } catch (error: any) {
+      console.error("Failed to publish video", error);
+      const message = error?.message || "Failed to publish video";
+      toast.error(message);
+    }
   };
 
   const handleShare = async () => {
@@ -642,6 +655,47 @@ export default function CreatePage() {
                 </div>
               )}
             </div>
+
+            {/* Drive Link Output */}
+            {pollingVideo?.googleDriveFileId && (
+              <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border-3 border-black dark:border-purple-500 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(168,85,247,1)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg
+                      className="w-5 h-5 text-blue-600 dark:text-blue-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path d="M2 6a2 2 0 012-2h5a2 2 0 012 2v2H2V6zM2 10h10v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                    </svg>
+                    <span className="text-gray-900 dark:text-white font-bold text-sm">
+                      Google Drive Link:
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const driveUrl = `https://drive.google.com/file/d/${pollingVideo.googleDriveFileId}/view`;
+                      navigator.clipboard.writeText(driveUrl);
+                      toast.success("Drive link copied to clipboard!");
+                    }}
+                    className="bg-blue-500 text-white px-3 py-1 rounded-lg font-bold text-xs border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 flex items-center gap-1"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                      <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                    </svg>
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2 break-all">
+                  https://drive.google.com/file/d/{pollingVideo.googleDriveFileId}/view
+                </p>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="grid grid-cols-3 gap-2">
