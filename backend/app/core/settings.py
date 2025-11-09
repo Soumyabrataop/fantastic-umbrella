@@ -73,7 +73,7 @@ def get_settings() -> Settings:
         or "postgresql+asyncpg://postgres:Mihir0209@localhost:5432/zappdb"
     )
 
-    media_backend = os.environ.get("MEDIA_STORAGE_BACKEND", "local").strip().lower() or "local"
+    media_backend = os.environ.get("MEDIA_STORAGE_BACKEND", "drive").strip().lower() or "drive"
     media_root_raw = os.environ.get("MEDIA_ROOT") or str(BASE_DIR / "media")
     media_root = Path(media_root_raw).resolve()
     if media_backend == "local":

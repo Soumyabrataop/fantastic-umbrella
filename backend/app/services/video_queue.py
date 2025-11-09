@@ -225,7 +225,7 @@ class VideoQueue:
         
         profile = await session.get(Profile, video.user_id)
         if profile:
-            if update.status == VideoStatus.COMPLETED:
+            if update.status == VideoStatus.COMPLETED and video.status != VideoStatus.COMPLETED:
                 profile.videos_created += 1
             profile.last_active_at = datetime.now(timezone.utc)
 

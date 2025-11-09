@@ -49,6 +49,10 @@ class GoogleDriveService:
         
         # Set token expiry if provided
         if token_expiry:
+            # Google OAuth library expects expiry as naive datetime in UTC
+            if token_expiry.tzinfo is not None:
+                # Convert timezone-aware datetime to naive UTC
+                token_expiry = token_expiry.astimezone(timezone.utc).replace(tzinfo=None)
             creds.expiry = token_expiry
         
         return creds
@@ -233,15 +237,15 @@ class GoogleDriveService:
 
     def get_file_url(self, file_id: str) -> str:
         """
-        Get direct download URL for a Drive file.
+        Get download URL for a Drive file (works for video playback).
 
         Args:
             file_id: Google Drive file ID
 
         Returns:
-            Direct download URL
+            Download URL for the file
         """
-        # Use the webContentLink format that works with video players
+        # Use download format for video playback compatibility
         return f"https://drive.google.com/uc?export=download&id={file_id}"
 
     def get_embed_url(self, file_id: str) -> str:

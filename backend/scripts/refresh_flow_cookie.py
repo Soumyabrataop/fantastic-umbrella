@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Google Labs Flow - Headless Cookie Extraction
+Google Labs Flow - Headful Cookie Extraction
 
 This script uses Playwright to:
-1. Log into Google with your credentials (headless mode)
-2. Navigate to labs.google.com/fx/tools/flow
+1. Log into Google with your credentials (headful mode)
+2. Navigate to labs.google/fx/tools/flow
 3. Extract the session cookies/access token
 4. Save to cookie.json for use with Flow API
 
@@ -26,130 +26,85 @@ Security Notes:
 - Recommended: Use a dedicated Google account
 """
 
-import json
 import os
 import sys
 import time
-from pathlib import Path
+import json
 from datetime import datetime
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
-from dotenv import load_dotenv
+from pathlib import Path
+from playwright.sync_api import sync_playwright
 
-# Force UTF-8 encoding for stdout/stderr when run as subprocess
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8')
-if sys.stderr.encoding != 'utf-8':
-    sys.stderr.reconfigure(encoding='utf-8')
-
-# Load environment variables from .env file
-SCRIPT_DIR = Path(__file__).parent
-BACKEND_DIR = SCRIPT_DIR.parent
-ENV_FILE = BACKEND_DIR / ".env"
-
-# Load .env file if it exists
-if ENV_FILE.exists():
-    load_dotenv(ENV_FILE)
-    print(f"[OK] Loaded environment from: {ENV_FILE}")
-else:
-    print(f"[WARN] No .env file found at: {ENV_FILE}")
-    print("   Using system environment variables")
-
-# Configuration
-GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL', '').strip('"').strip("'")
-GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD', '').strip('"').strip("'")
-
-# URLs
+# Constants
+GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL')
+GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD')
 GOOGLE_LABS_FLOW_URL = "https://labs.google/fx/tools/flow"
 SESSION_API_URL = "https://labs.google/fx/api/auth/session"
 
-# Paths (already defined above but kept for clarity)
+# Directory paths
+SCRIPT_DIR = Path(__file__).parent
+BACKEND_DIR = SCRIPT_DIR.parent
 COOKIE_FILE = BACKEND_DIR / "cookie.json"
 BACKUP_FILE = BACKEND_DIR / "flow_session_backup.json"
-BROWSER_DATA_DIR = SCRIPT_DIR / "browser_data"
+BROWSER_DATA_DIR = BACKEND_DIR / "browser_data"
 
 
 def print_banner():
-    """Print script banner."""
+    """Print the script banner."""
     print("\n" + "=" * 70)
-    print("  Google Labs Flow - Headless Cookie Extraction")
+    print("  🎬 Google Labs Flow - Cookie Extractor")
+    print("  🔐 Headful Mode (Visible Browser)")
+    print("=" * 70)
+    print("  📧 Gmail-first login for longer token expiry")
+    print("  💾 Persistent browser profile for session reuse")
     print("=" * 70)
 
 
 def validate_credentials():
-    """Validate that credentials are set."""
-    if not GOOGLE_EMAIL or not GOOGLE_PASSWORD:
-        print("\n❌ ERROR: Credentials not set!")
-        print("\n📝 Set environment variables:")
-        print("\nPowerShell:")
-        print('  $env:GOOGLE_EMAIL = "your-email@gmail.com"')
-        print('  $env:GOOGLE_PASSWORD = "your-app-password"')
-        print("\nBash/Linux:")
-        print('  export GOOGLE_EMAIL="your-email@gmail.com"')
-        print('  export GOOGLE_PASSWORD="your-app-password"')
-        print("\n💡 Security Tips:")
-        print("  • Use an App Password (not your main password)")
-        print("  • Create at: https://myaccount.google.com/apppasswords")
-        print("  • Disable 2FA temporarily if not using App Password")
+    """Validate that required environment variables are set."""
+    if not GOOGLE_EMAIL:
+        print("\n❌ GOOGLE_EMAIL environment variable not set!")
+        print("   Set it with: $env:GOOGLE_EMAIL='your.email@gmail.com'")
         return False
+
+    if not GOOGLE_PASSWORD:
+        print("\n❌ GOOGLE_PASSWORD environment variable not set!")
+        print("   Set it with: $env:GOOGLE_PASSWORD='your-password'")
+        print("   💡 Use App Password if you have 2FA enabled")
+        return False
+
     return True
 
 
 def backup_existing_cookie():
-    """Backup existing cookie.json if it exists."""
+    """Create a backup of existing cookie.json if it exists."""
     if COOKIE_FILE.exists():
+        backup_name = f"cookie_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        backup_path = BACKEND_DIR / backup_name
         try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_name = BACKEND_DIR / f"cookie_backup_{timestamp}.json"
-            
-            # Copy to timestamped backup
-            with open(COOKIE_FILE, 'r') as src:
-                content = src.read()
-            with open(backup_name, 'w') as dst:
-                dst.write(content)
-            
-            # Also copy to standard backup location
-            with open(BACKUP_FILE, 'w') as dst:
-                dst.write(content)
-            
-            print(f"\n📦 Backed up existing cookie.json to:")
-            print(f"   - {backup_name.name}")
-            print(f"   - {BACKUP_FILE.name}")
-            return True
+            import shutil
+            shutil.copy2(COOKIE_FILE, backup_path)
+            print(f"\n📋 Backed up existing cookie.json to: {backup_name}")
         except Exception as e:
-            print(f"\n⚠️  Warning: Could not backup cookie.json: {e}")
-            return False
-    else:
-        print("\n📝 No existing cookie.json found (first run)")
-        return True
+            print(f"\n⚠️  Could not backup existing cookie.json: {e}")
 
 
-def extract_flow_cookie_headless(email: str, password: str):
-    """
-    Extract Google Labs Flow cookies in headless mode.
-    
-    Args:
-        email: Google account email
-        password: Google account password (or App Password)
-    
-    Returns:
-        dict: Cookie data with access_token, or None on failure
-    """
+def extract_flow_cookie_headful(email: str, password: str):
     print(f"\n📧 Email: {email}")
     print(f"🔒 Password: {'*' * len(password)}")
     print(f"🎯 Target: {GOOGLE_LABS_FLOW_URL}")
-    print(f"🤖 Mode: Headless (invisible browser)")
-    
+    print(f"🤖 Mode: Headful (visible browser)")
+
     # Create browser data directory
     os.makedirs(BROWSER_DATA_DIR, exist_ok=True)
-    
+
     with sync_playwright() as p:
-        print("\n🚀 Launching headless browser...")
-        
+        print("\n🚀 Launching headful browser (persistent profile)...")
+
         try:
-            # Launch persistent context (headless)
+            # Launch persistent context (headful)
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(BROWSER_DATA_DIR),
-                headless=True,  # Headless mode
+                headless=False,  # Visible browser
                 args=[
                     '--no-sandbox',
                     '--disable-blink-features=AutomationControlled',
@@ -159,130 +114,137 @@ def extract_flow_cookie_headless(email: str, password: str):
                 viewport={'width': 1920, 'height': 1080},
                 ignore_https_errors=True,
             )
-            
+
             page = context.pages[0] if context.pages else context.new_page()
-            
-            # Step 1: Check if already logged in
-            print("\n📋 Step 1: Checking existing session...")
+
+            # Step 1: Ensure Gmail session exists by navigating to mail.google.com
+            print("\n� Step 1: Ensuring Gmail session (visit mail.google.com)...")
             try:
-                response = page.goto(SESSION_API_URL, wait_until='networkidle', timeout=15000)
-                
-                if response and response.status == 200:
-                    session_data = response.json()
-                    
-                    if 'access_token' in session_data and session_data['access_token']:
-                        access_token = session_data['access_token']
-                        print("   ✅ Existing valid session found!")
-                        print(f"   Token: {access_token[:60]}...")
-                        
-                        # Extract ALL browser cookies even for existing session
-                        print("   ➜ Extracting all browser cookies...")
-                        all_cookies = context.cookies()
-                        print(f"   ✓ Found {len(all_cookies)} cookies")
-                        
-                        cookie_data = {
-                            'access_token': access_token,
-                            'expires': session_data.get('expires', ''),
-                            'extracted_at': datetime.now().isoformat(),
-                            'method': 'existing_session',
-                            'all_cookies': all_cookies  # Include all cookies
-                        }
-                        
-                        context.close()
-                        return cookie_data
-            except:
-                print("   ➜ No existing session, proceeding with login...")
-            
+                mail_response = page.goto("https://mail.google.com/", wait_until='networkidle', timeout=30000)
+
+                current = page.url
+                if 'mail.google.com' in current and 'signin' not in current.lower():
+                    print(f"   ✓ Already at Gmail: {current}")
+                else:
+                    print(f"   ✳️  Gmail not authenticated (url: {current}) - attempting interactive sign-in")
+
+                    # Attempt interactive sign-in on mail.google.com
+                    try:
+                        email_input = page.wait_for_selector('input[type="email"]', timeout=8000)
+                        email_input.fill(email)
+                        next_btn = page.wait_for_selector('button:has-text("Next")', timeout=5000)
+                        next_btn.click()
+                        time.sleep(2)
+
+                        password_input = page.wait_for_selector('input[type="password"]', timeout=15000)
+                        password_input.fill(password)
+                        next_btn = page.wait_for_selector('button:has-text("Next")', timeout=5000)
+                        next_btn.click()
+                        time.sleep(5)
+
+                        # Wait a bit for mailbox to load
+                        page.wait_for_load_state('networkidle', timeout=20000)
+                        print("   ✓ Attempted Gmail sign-in (check browser window for interactive prompts)")
+                    except Exception:
+                        print("   ⚠️  Gmail sign-in input not found; continuing")
+
+            except Exception as e:
+                print(f"   ⚠️  Error accessing mail.google.com: {e}")
+
             # Step 2: Navigate to Flow page
-            print("\n📋 Step 2: Navigating to Google Labs Flow...")
+            print("\n� Step 2: Navigating to Google Labs Flow...")
             page.goto(GOOGLE_LABS_FLOW_URL, wait_until='networkidle', timeout=30000)
             time.sleep(2)
-            
-            # Step 3: Click "Sign in with Google"
-            print("\n📋 Step 3: Clicking 'Sign in with Google'...")
+
+            # Step 3: Click "Sign in with Google" if present
+            print("\n📋 Step 3: Initiating sign-in on Labs page (if needed)...")
             try:
                 sign_in_button = page.wait_for_selector('text="Sign in with Google"', timeout=10000)
                 sign_in_button.click()
                 time.sleep(3)
-            except PlaywrightTimeout:
+            except Exception:
                 # Try alternative selector
-                sign_in_button = page.wait_for_selector('button:has-text("Sign in")', timeout=5000)
-                sign_in_button.click()
-                time.sleep(3)
-            
-            # Step 4: Enter email
-            print("\n📋 Step 4: Entering email...")
-            email_input = page.wait_for_selector('input[type="email"]', timeout=15000)
-            email_input.fill(email)
-            
-            next_button = page.wait_for_selector('button:has-text("Next")', timeout=5000)
-            next_button.click()
-            time.sleep(3)
-            
-            # Step 5: Enter password
-            print("\n📋 Step 5: Entering password...")
-            password_input = page.wait_for_selector('input[type="password"]', timeout=15000)
-            password_input.fill(password)
-            
-            next_button = page.wait_for_selector('button:has-text("Next")', timeout=5000)
-            next_button.click()
-            time.sleep(5)
-            
-            # Step 6: Check for 2FA
-            print("\n📋 Step 6: Checking for 2FA...")
+                try:
+                    sign_in_button = page.wait_for_selector('button:has-text("Sign in")', timeout=5000)
+                    sign_in_button.click()
+                    time.sleep(3)
+                except Exception:
+                    print("   ⚠️  No explicit sign-in button found on Labs page; proceeding")
+
+            # Step 4/5: If redirected to Google sign-in flows, handle email/password as needed
             try:
-                twofa_input = page.wait_for_selector(
-                    'input[type="tel"], input[aria-label*="code"]',
-                    timeout=3000
-                )
+                email_input = page.wait_for_selector('input[type="email"]', timeout=10000)
+                email_input.fill(email)
+                next_button = page.wait_for_selector('button:has-text("Next")', timeout=5000)
+                next_button.click()
+                time.sleep(2)
+
+                password_input = page.wait_for_selector('input[type="password"]', timeout=15000)
+                password_input.fill(password)
+                next_button = page.wait_for_selector('button:has-text("Next")', timeout=5000)
+                next_button.click()
+                time.sleep(5)
+            except Exception:
+                # Not necessarily an error; may already be signed in
+                pass
+
+            # Step 6: Check for 2FA
+            print("\n📋 Step 6: Checking for 2FA prompts...")
+            try:
+                twofa_input = page.wait_for_selector('input[type="tel"], input[aria-label*="code"]', timeout=3000)
                 if twofa_input:
                     print("\n❌ 2FA DETECTED!")
-                    print("   This script requires an App Password (no 2FA prompt)")
-                    print("   Or temporarily disable 2FA on your Google account")
-                    print("\n   To create App Password:")
-                    print("   https://myaccount.google.com/apppasswords")
+                    print("   This script requires an App Password (no 2FA prompt) or interactive input")
+                    print("   To create App Password: https://myaccount.google.com/apppasswords")
                     context.close()
                     return None
-            except PlaywrightTimeout:
-                print("   ✓ No 2FA required")
-            
-            # Step 7: Wait for redirect
-            print("\n📋 Step 7: Waiting for successful login...")
+            except Exception:
+                print("   ✓ No 2FA required (or not detected)")
+
+            # Step 7: Wait for successful login / redirect to labs
+            print("\n📋 Step 7: Waiting for successful login / redirect to labs...")
             time.sleep(5)
-            
-            # Check URL
             current_url = page.url
             if 'labs.google' in current_url:
-                print(f"   ✓ Redirected to: {current_url}")
+                print(f"   ✓ At labs.google: {current_url}")
             else:
-                print(f"   ⚠️  Unexpected URL: {current_url}")
+                print(f"   ⚠️  Unexpected URL after login: {current_url}")
                 time.sleep(3)
-            
+
             # Step 8: Extract access token from session API
-            print("\n📋 Step 8: Extracting access token...")
+            print("\n📋 Step 8: Extracting access token from Labs session API...")
             response = page.goto(SESSION_API_URL, wait_until='networkidle', timeout=15000)
-            
-            if response.status == 200:
+
+            if response and response.status == 200:
                 session_data = response.json()
-                
+
+                # Check if session API returned empty object or missing fields
+                if not session_data or "access_token" not in session_data:
+                    print("   ❌ Session API returned empty/invalid response - authentication failed")
+                    print(f"   Response: {session_data}")
+                    context.close()
+                    return None
+
                 if 'access_token' in session_data:
                     access_token = session_data['access_token']
+                    expires = session_data.get('expires', '')
                     print("   ✅ Access token extracted!")
                     print(f"   Token: {access_token[:60]}...")
-                    
+                    print(f"   Expires: {expires}")
+
                     # Also extract ALL browser cookies
                     print("\n📋 Step 9: Extracting all browser cookies...")
                     all_cookies = context.cookies()
                     print(f"   ✓ Found {len(all_cookies)} cookies")
-                    
+
                     cookie_data = {
                         'access_token': access_token,
-                        'expires': session_data.get('expires', ''),
+                        'expires': expires,
                         'extracted_at': datetime.now().isoformat(),
-                        'method': 'fresh_login',
+                        'method': 'headful_login',
                         'all_cookies': all_cookies  # Include all cookies for session persistence
                     }
-                    
+
                     context.close()
                     return cookie_data
                 else:
@@ -291,23 +253,24 @@ def extract_flow_cookie_headless(email: str, password: str):
                     context.close()
                     return None
             else:
-                print(f"   ❌ Session API returned status: {response.status}")
+                status = response.status if response else 'no response'
+                print(f"   ❌ Session API returned status: {status}")
                 context.close()
                 return None
-                
+
         except Exception as e:
             print(f"\n❌ Error during extraction: {e}")
             import traceback
             traceback.print_exc()
-            
+
             # Take screenshot for debugging
             try:
                 screenshot_path = SCRIPT_DIR / f"error_screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                 page.screenshot(path=str(screenshot_path))
                 print(f"📸 Screenshot saved: {screenshot_path}")
-            except:
+            except Exception:
                 pass
-            
+
             context.close()
             return None
 
@@ -445,7 +408,7 @@ def main():
     print("  Starting Cookie Extraction")
     print("=" * 70)
     
-    cookie_data = extract_flow_cookie_headless(GOOGLE_EMAIL, GOOGLE_PASSWORD)
+    cookie_data = extract_flow_cookie_headful(GOOGLE_EMAIL, GOOGLE_PASSWORD)
     
     if cookie_data:
         print("\n" + "=" * 70)

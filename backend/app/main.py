@@ -102,10 +102,10 @@ async def lifespan(app: FastAPI):
                 logger.error("❌ Initial cookie refresh failed: %s", exc)
                 logger.warning("⚠️  Backend will retry periodically via token refresh loop")
         
-        await cookie_refresher.start()  # Start 21-hour cookie refresh loop
-        await video_queue.start()
-        logger.info("Video queue worker scheduled")
-        app.state.video_queue = video_queue
+        # await cookie_refresher.start()  # Start 21-hour cookie refresh loop
+        # await video_queue.start()
+        # logger.info("Video queue worker scheduled")
+        # app.state.video_queue = video_queue
         yield
     finally:
         stop_event.set()

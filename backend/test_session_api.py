@@ -23,23 +23,12 @@ DEFAULT_HEADERS = {
 }
 
 async def test_token():
-    # Load cookies
-    with open(COOKIE_FILE) as f:
-        cookies = json.load(f)
+    # Load cookies using the same method as token_refresher
+    from app.utils.cookie_loader import load_cookie_map
+    cookies = load_cookie_map(COOKIE_FILE)
     
-    # Build cookie header with ALL cookies
-    cookie_parts = []
-    access_token = None
-    
-    for entry in cookies:
-        if isinstance(entry, dict) and entry.get("name"):
-            name = entry.get("name")
-            value = entry.get("value")
-            if name and value:
-                cookie_parts.append(f"{name}={value}")
-                if name == "authorization":
-                    access_token = value
-    
+    # Get the access token
+    access_token = cookies.get('authorization')
     if not access_token:
         print("❌ No authorization token found in cookie.json")
         return
@@ -48,14 +37,14 @@ async def test_token():
     print("Testing Google Labs Flow Session API")
     print("=" * 70)
     print(f"\n🔑 Access Token: {access_token[:60]}...")
-    print(f"🍪 Total cookies: {len(cookie_parts)}")
+    print(f"🍪 Total cookies: {len(cookies)}")
     
-    # Format cookie header with all cookies
-    cookie_header = "; ".join(cookie_parts)
+    # Format cookie header the same way as token_refresher
+    cookie_header = "; ".join(f"{name}={value}" for name, value in cookies.items())
     headers = {**DEFAULT_HEADERS, "cookie": cookie_header}
     
     print(f"\n🌐 Making request to: {SESSION_URL}")
-    print(f"📋 Cookie header: {cookie_header[:80]}...")
+    print(f"📋 Cookie header length: {len(cookie_header)} characters")
     
     async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
         try:

@@ -173,6 +173,27 @@ export function getPreferredVideoUrl(video: Video): string | undefined {
   for (const candidate of candidates) {
     const resolved = resolveMediaUrl(candidate);
     if (resolved) {
+      // Convert Google Drive URLs to embed format for iframe playback
+      if (resolved.includes('drive.google.com')) {
+        // Handle download URLs
+        if (resolved.includes('uc?export=download&id=')) {
+          const match = resolved.match(/uc\?export=download&id=([^&]+)/);
+          if (match) {
+            return `https://drive.google.com/file/d/${match[1]}/preview`;
+          }
+        }
+        // Handle direct access URLs
+        if (resolved.includes('uc?id=')) {
+          const match = resolved.match(/uc\?id=([^&]+)/);
+          if (match) {
+            return `https://drive.google.com/file/d/${match[1]}/preview`;
+          }
+        }
+        // Already in embed format
+        if (resolved.includes('/file/d/') && resolved.includes('/preview')) {
+          return resolved;
+        }
+      }
       return resolved;
     }
   }
@@ -194,6 +215,27 @@ export function getPreferredThumbnailUrl(video: Video): string | undefined {
   for (const candidate of candidates) {
     const resolved = resolveMediaUrl(candidate);
     if (resolved) {
+      // Convert Google Drive URLs to download format for image display
+      if (resolved.includes('drive.google.com')) {
+        // Handle embed URLs
+        if (resolved.includes('/file/d/') && resolved.includes('/preview')) {
+          const match = resolved.match(/drive\.google\.com\/file\/d\/([^\/]+)\/preview/);
+          if (match) {
+            return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+          }
+        }
+        // Handle direct access URLs
+        if (resolved.includes('uc?id=')) {
+          const match = resolved.match(/uc\?id=([^&]+)/);
+          if (match) {
+            return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+          }
+        }
+        // Already in correct format
+        if (resolved.includes('uc?export=download&id=')) {
+          return resolved;
+        }
+      }
       return resolved;
     }
   }

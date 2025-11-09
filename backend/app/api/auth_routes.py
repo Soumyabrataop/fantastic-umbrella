@@ -83,7 +83,8 @@ async def google_oauth_login(
         "client_id": settings.google_client_id,
         "redirect_uri": settings.google_redirect_uri,
         "response_type": "code",
-        "scope": "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+        # Include 'openid' to avoid scope mismatch (Google may append it)
+        "scope": "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email openid",
         "access_type": "offline",  # Get refresh token
         "prompt": "consent",  # Force consent screen to ensure refresh token
         "state": state,
@@ -93,6 +94,42 @@ async def google_oauth_login(
     logger.info(f"Redirecting user {user.id} to Google OAuth consent screen")
     
     return RedirectResponse(url=google_url)
+
+
+@router.post("/initiate")
+async def google_oauth_initiate(
+    user: AuthenticatedUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """
+    Initiate Google OAuth flow and return the consent screen URL as JSON.
+
+    This endpoint is intended for XHR requests where the Authorization bearer
+    token is included (for example via the Next.js proxy). The frontend can
+    POST here, receive the Google consent URL, and then redirect the browser
+    to that URL. Returning JSON allows the frontend to ensure the backend
+    received the authenticated user context.
+    """
+    # Generate state token for CSRF protection
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = {"user_id": str(user.id)}
+
+    # Build Google OAuth URL
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
+        "response_type": "code",
+        # Include 'openid' to avoid scope mismatch
+        "scope": "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email openid",
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+    }
+
+    google_url = f"{auth_url}?{urlencode(params)}"
+    logger.info(f"Created Google OAuth URL for user {user.id}")
+    return {"url": google_url}
 
 
 @router.get("/callback")
@@ -131,7 +168,11 @@ async def google_oauth_callback(
                     "redirect_uris": [settings.google_redirect_uri],
                 }
             },
-            scopes=["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/userinfo.email"],
+            scopes=[
+                "https://www.googleapis.com/auth/drive.file",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "openid",
+            ],
         )
         flow.redirect_uri = settings.google_redirect_uri
         
