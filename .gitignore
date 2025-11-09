@@ -20,6 +20,8 @@ playwright-data/
 browser_data/
 backend/my-ai-460612-c375c19c0b1d.json
 backend/.env
+backend/venv/
+backend/.venv/
 .kiro
 .env.local
 my-ai-460612-c375c19c0b1d (2).json

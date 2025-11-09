@@ -38,8 +38,17 @@ class StorageService:
         result = await session.execute(stmt)
         profile = result.scalar_one_or_none()
         
-        if not profile or not profile.google_access_token or not profile.google_refresh_token:
-            logger.warning(f"User {user_id} does not have Google OAuth tokens")
+        if not profile:
+            logger.warning(f"User {user_id} profile not found in database")
+            return None
+            
+        if not profile.google_access_token or not profile.google_refresh_token:
+            logger.warning(
+                f"User {user_id} does not have Google OAuth tokens. "
+                f"User must sign in with Google through Supabase to enable Drive uploads. "
+                f"Has access_token: {bool(profile.google_access_token)}, "
+                f"Has refresh_token: {bool(profile.google_refresh_token)}"
+            )
             return None
         
         settings = self._settings_override or get_settings()

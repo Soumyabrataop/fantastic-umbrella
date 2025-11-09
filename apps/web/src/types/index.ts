@@ -16,6 +16,7 @@ export interface Video {
   ranking_score?: number; // legacy fallback until all clients migrate
   durationSeconds?: number;
   assets?: VideoAsset[];
+  googleDriveFileId?: string; // Google Drive file ID for videos stored in Drive
 }
 
 export interface VideoAsset {

@@ -57,6 +57,7 @@ class VideoRead(BaseModel):
     status: VideoStatus
     ranking_score: float | None = Field(None, alias="rankingScore")
     assets: list[VideoAssetRead] = Field(default_factory=list)
+    google_drive_file_id: str | None = Field(None, alias="googleDriveFileId")
 
 
 class FeedResponse(BaseModel):

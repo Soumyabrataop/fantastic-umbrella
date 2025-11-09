@@ -34,6 +34,19 @@ from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
+# Fix Windows console encoding for emoji support
+if sys.platform == 'win32':
+    try:
+        # Try to set UTF-8 encoding for stdout
+        import codecs
+        sys.stdout.reconfigure(encoding='utf-8')
+    except (AttributeError, Exception):
+        # If reconfigure doesn't work, wrap stdout
+        try:
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'ignore')
+        except Exception:
+            pass  # Fall back to default encoding
+
 # Constants
 GOOGLE_EMAIL = os.getenv('GOOGLE_EMAIL')
 GOOGLE_PASSWORD = os.getenv('GOOGLE_PASSWORD')
@@ -52,7 +65,7 @@ def print_banner():
     """Print the script banner."""
     print("\n" + "=" * 70)
     print("  🎬 Google Labs Flow - Cookie Extractor")
-    print("  🔐 Headful Mode (Visible Browser)")
+    print("  🔐 Headless Mode (Background Browser)")
     print("=" * 70)
     print("  📧 Gmail-first login for longer token expiry")
     print("  💾 Persistent browser profile for session reuse")
@@ -92,19 +105,49 @@ def extract_flow_cookie_headful(email: str, password: str):
     print(f"\n📧 Email: {email}")
     print(f"🔒 Password: {'*' * len(password)}")
     print(f"🎯 Target: {GOOGLE_LABS_FLOW_URL}")
-    print(f"🤖 Mode: Headful (visible browser)")
+    print(f"🤖 Mode: Headless (background browser)")
 
     # Create browser data directory
     os.makedirs(BROWSER_DATA_DIR, exist_ok=True)
+    
+    # Kill any existing Chrome processes using the browser data directory
+    # This prevents "Opening in existing browser session" errors
+    print("\n⚠️  Checking for existing Chrome instances...")
+    if sys.platform == 'win32':
+        try:
+            import subprocess
+            # Kill Chrome processes to avoid conflicts with persistent context
+            result = subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], 
+                                  capture_output=True, 
+                                  text=True,
+                                  timeout=5)
+            if result.returncode == 0:
+                print("   ✓ Closed existing Chrome instances")
+                time.sleep(2)  # Wait for processes to fully terminate
+            else:
+                print("   ✓ No Chrome instances to close")
+        except Exception as e:
+            print(f"   ⚠️  Could not check Chrome processes: {e}")
+    else:
+        # For Linux/Mac
+        try:
+            import subprocess
+            subprocess.run(['pkill', '-f', 'chrome'], 
+                         stderr=subprocess.DEVNULL,
+                         timeout=5)
+            time.sleep(2)
+        except Exception:
+            pass
 
     with sync_playwright() as p:
-        print("\n🚀 Launching headful browser (persistent profile)...")
+        print("\n🚀 Launching headless browser (persistent profile)...")
 
+        context = None
         try:
-            # Launch persistent context (headful)
+            # Launch persistent context (headless)
             context = p.chromium.launch_persistent_context(
                 user_data_dir=str(BROWSER_DATA_DIR),
-                headless=False,  # Visible browser
+                headless=True,  # Invisible browser
                 args=[
                     '--no-sandbox',
                     '--disable-blink-features=AutomationControlled',
@@ -114,7 +157,13 @@ def extract_flow_cookie_headful(email: str, password: str):
                 viewport={'width': 1920, 'height': 1080},
                 ignore_https_errors=True,
             )
+        except Exception as e:
+            print(f"\n❌ Failed to launch browser with persistent context: {e}")
+            print("💡 TIP: Make sure all Chrome windows are closed before running this script")
+            print("💡 Or manually delete the browser_data folder and try again")
+            raise
 
+        try:
             page = context.pages[0] if context.pages else context.new_page()
 
             # Step 1: Ensure Gmail session exists by navigating to mail.google.com

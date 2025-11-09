@@ -11,28 +11,28 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Get the code from URL params
+        // Check for errors in URL params first
         const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
+        const errorParam = params.get("error");
+        const errorDescription = params.get("error_description");
 
-        if (code) {
-          // Exchange code for session
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (errorParam) {
+          throw new Error(errorDescription || errorParam);
+        }
 
-          if (error) throw error;
+        // Supabase automatically handles the OAuth callback with detectSessionInUrl: true
+        // Wait for session to be established
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session) {
           // Successful login - redirect to profile
           router.push("/profile");
         } else {
-          // No code - might be an error
-          const errorParam = params.get("error");
-          const errorDescription = params.get("error_description");
-
-          if (errorParam) {
-            throw new Error(errorDescription || errorParam);
-          }
-
-          // No code and no error - redirect to auth
+          // No session after waiting - redirect to auth
           router.push("/auth");
         }
       } catch (err: any) {

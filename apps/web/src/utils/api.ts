@@ -162,6 +162,12 @@ export function resolveMediaUrl(url?: string | null): string | undefined {
 }
 
 export function getPreferredVideoUrl(video: Video): string | undefined {
+  // Use proxy endpoint for videos with Google Drive file IDs
+  if (video.googleDriveFileId && video.id) {
+    return `/api/backend/videos/${video.id}/stream`;
+  }
+
+  // Fallback to direct URLs for non-Google Drive videos
   const videoAsset = video.assets?.find((asset) => asset.assetType === "video");
   const candidates = [
     video.videoUrl,
@@ -173,27 +179,6 @@ export function getPreferredVideoUrl(video: Video): string | undefined {
   for (const candidate of candidates) {
     const resolved = resolveMediaUrl(candidate);
     if (resolved) {
-      // Convert Google Drive URLs to embed format for iframe playback
-      if (resolved.includes('drive.google.com')) {
-        // Handle download URLs
-        if (resolved.includes('uc?export=download&id=')) {
-          const match = resolved.match(/uc\?export=download&id=([^&]+)/);
-          if (match) {
-            return `https://drive.google.com/file/d/${match[1]}/preview`;
-          }
-        }
-        // Handle direct access URLs
-        if (resolved.includes('uc?id=')) {
-          const match = resolved.match(/uc\?id=([^&]+)/);
-          if (match) {
-            return `https://drive.google.com/file/d/${match[1]}/preview`;
-          }
-        }
-        // Already in embed format
-        if (resolved.includes('/file/d/') && resolved.includes('/preview')) {
-          return resolved;
-        }
-      }
       return resolved;
     }
   }
@@ -216,23 +201,25 @@ export function getPreferredThumbnailUrl(video: Video): string | undefined {
     const resolved = resolveMediaUrl(candidate);
     if (resolved) {
       // Convert Google Drive URLs to download format for image display
-      if (resolved.includes('drive.google.com')) {
+      if (resolved.includes("drive.google.com")) {
         // Handle embed URLs
-        if (resolved.includes('/file/d/') && resolved.includes('/preview')) {
-          const match = resolved.match(/drive\.google\.com\/file\/d\/([^\/]+)\/preview/);
+        if (resolved.includes("/file/d/") && resolved.includes("/preview")) {
+          const match = resolved.match(
+            /drive\.google\.com\/file\/d\/([^\/]+)\/preview/
+          );
           if (match) {
             return `https://drive.google.com/uc?export=download&id=${match[1]}`;
           }
         }
         // Handle direct access URLs
-        if (resolved.includes('uc?id=')) {
+        if (resolved.includes("uc?id=")) {
           const match = resolved.match(/uc\?id=([^&]+)/);
           if (match) {
             return `https://drive.google.com/uc?export=download&id=${match[1]}`;
           }
         }
         // Already in correct format
-        if (resolved.includes('uc?export=download&id=')) {
+        if (resolved.includes("uc?export=download&id=")) {
           return resolved;
         }
       }
@@ -472,6 +459,7 @@ export interface Video {
   rankingScore?: number;
   durationSeconds?: number;
   assets?: VideoAsset[];
+  googleDriveFileId?: string; // Google Drive file ID for videos stored in Drive
 }
 
 export interface CreateVideoRequest {
@@ -570,6 +558,12 @@ export const videoAPI = {
   // Get user's liked videos
   getLikedVideos: async (userId: string): Promise<Video[]> => {
     const response = await api.get(`/users/${userId}/liked`);
+    return response.data;
+  },
+
+  // Publish video (make it visible in feed)
+  publishVideo: async (videoId: string): Promise<Video> => {
+    const response = await api.post(`/videos/${videoId}/publish`);
     return response.data;
   },
 };

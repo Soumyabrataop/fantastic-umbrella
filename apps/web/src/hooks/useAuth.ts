@@ -27,14 +27,61 @@ export function useAuth() {
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes and capture provider tokens
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setApiAccessToken(session?.access_token ?? undefined);
       setLoading(false);
+
+      // Capture and store provider tokens when available
+      if (session?.provider_token) {
+        window.localStorage.setItem(
+          "oauth_provider_token",
+          session.provider_token
+        );
+      }
+
+      if (session?.provider_refresh_token) {
+        window.localStorage.setItem(
+          "oauth_provider_refresh_token",
+          session.provider_refresh_token
+        );
+      }
+
+      // Sync tokens to backend when user signs in with Google
+      if (
+        event === "SIGNED_IN" &&
+        (session?.provider_token || session?.provider_refresh_token)
+      ) {
+        try {
+          const response = await fetch("/api/backend/auth/google/sync-tokens", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              google_access_token: session.provider_token,
+              google_refresh_token: session.provider_refresh_token,
+            }),
+          });
+
+          if (!response.ok) {
+            console.error("Failed to sync OAuth tokens");
+          }
+        } catch (error) {
+          console.error("Failed to sync OAuth tokens:", error);
+        }
+      }
+
+      // Clear tokens on sign out
+      if (event === "SIGNED_OUT") {
+        window.localStorage.removeItem("oauth_provider_token");
+        window.localStorage.removeItem("oauth_provider_refresh_token");
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -85,6 +132,8 @@ export function useAuth() {
           access_type: "offline",
           prompt: "consent",
         },
+        scopes:
+          "openid email profile https://www.googleapis.com/auth/drive.file",
       },
     });
     return { data, error };

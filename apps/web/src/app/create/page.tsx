@@ -8,7 +8,6 @@ import { useVideoActions } from "@/hooks/useVideoActions";
 import { videoAPI, Video, getPreferredVideoUrl } from "@/utils/api";
 import { toast } from "@/utils/toast";
 import Loader from "@/components/Loader";
-import ConnectDrive from "@/components/ConnectDrive";
 
 const POLL_INTERVAL_MS = 5000;
 const PROGRESS_INTERVAL_MS = 1500;
@@ -302,17 +301,33 @@ export default function CreatePage() {
 
   const handlePublish = async () => {
     if (!pollingVideoId) {
-      window.alert("Video is not ready to publish yet.");
+      toast.error("Video is not ready to publish yet.");
       return;
     }
 
     try {
-      await videoAPI.publishVideo(pollingVideoId);
-      toast.success("Video published successfully!");
-      router.push("/feed");
+      console.log("Publishing video:", pollingVideoId);
+      const result = await videoAPI.publishVideo(pollingVideoId);
+      console.log("Publish result:", result);
+      toast.success("Video published successfully! Redirecting to feed...");
+
+      // Wait a moment before redirecting
+      setTimeout(() => {
+        router.push("/feed");
+      }, 1000);
     } catch (error: any) {
-      console.error("Failed to publish video", error);
-      const message = error?.message || "Failed to publish video";
+      console.error("Failed to publish video:", error);
+      console.error("Error details:", {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status,
+      });
+
+      const message =
+        error?.response?.data?.message ||
+        error?.response?.data?.detail ||
+        error?.message ||
+        "Failed to publish video";
       toast.error(message);
     }
   };
@@ -367,7 +382,7 @@ export default function CreatePage() {
           <div className="mb-6 rounded-xl border-3 border-black bg-white/90 p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:border-red-400 dark:bg-gray-900/80">
             <div className="flex items-start gap-3">
               <svg
-                className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"
+                className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5"
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
@@ -413,11 +428,6 @@ export default function CreatePage() {
         {/* Input Stage */}
         {stage === "input" && (
           <div className="space-y-6 animate-fade-slide-up">
-            {/* Drive Connection Status - MUST CONNECT FIRST */}
-            <div className="mb-6">
-              <ConnectDrive />
-            </div>
-
             {/* Title */}
             <div className="text-center mb-6">
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 drop-shadow-lg">
@@ -633,12 +643,17 @@ export default function CreatePage() {
               {generatedVideo ? (
                 <video
                   ref={videoRef}
-                  src={generatedVideo}
+                  src={
+                    pollingVideoId
+                      ? `/api/backend/videos/${pollingVideoId}/stream`
+                      : generatedVideo
+                  }
                   className="w-full h-full object-cover"
                   controls
                   autoPlay
                   loop
                   muted
+                  playsInline
                 />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-gray-300">
@@ -692,7 +707,8 @@ export default function CreatePage() {
                   </button>
                 </div>
                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-2 break-all">
-                  https://drive.google.com/file/d/{pollingVideo.googleDriveFileId}/view
+                  https://drive.google.com/file/d/
+                  {pollingVideo.googleDriveFileId}/view
                 </p>
               </div>
             )}
@@ -702,7 +718,7 @@ export default function CreatePage() {
               {/* Publish Button */}
               <button
                 onClick={handlePublish}
-                className="bg-linear-to-r from-green-500 to-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold text-xs border-3 border-black dark:border-emerald-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(34,197,94,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 flex items-center justify-center gap-1"
+                className="bg-linear-to-r from-green-500 to-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold text-xs border-3 border-black dark:border-emerald-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(34,197,94,1)] hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all duration-200 flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={!pollingVideoId}
               >
                 <svg

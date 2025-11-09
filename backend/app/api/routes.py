@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import and_, func, inspect, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +64,72 @@ logger = logging.getLogger(__name__)
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# -----------------------------
+# Video Streaming
+# -----------------------------
+
+from fastapi.responses import StreamingResponse
+import io
+
+@router.get("/videos/{video_id}/stream")
+async def stream_video(
+    video_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Proxy video streaming from Google Drive to avoid CORS/CSP issues"""
+    try:
+        # Get video from database
+        video = await _get_video(session, video_id)
+        
+        # Check if video is published (for public access)
+        if not video.is_published:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video not found or not published"
+            )
+        
+        # Get the Google Drive file ID
+        drive_file_id = video.google_drive_file_id
+        if not drive_file_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Video file not available"
+            )
+        
+        # Stream from Google Drive using direct download URL
+        drive_url = f"https://drive.google.com/uc?export=download&id={drive_file_id}"
+        
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            response = await client.get(drive_url)
+            
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch video from Drive: {response.status_code}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Failed to fetch video from storage"
+                )
+            
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="video/mp4",
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(len(response.content)),
+                    "Cache-Control": "public, max-age=3600",
+                    "Access-Control-Allow-Origin": "*",
+                }
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stream video {video_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to stream video"
+        )
 
 
 # -----------------------------
@@ -662,6 +729,7 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
         status=video.status,
         ranking_score=ranking_score,
         assets=assets,
+        google_drive_file_id=video.google_drive_file_id,
     )
 
 

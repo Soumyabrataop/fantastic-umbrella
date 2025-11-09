@@ -98,7 +98,8 @@ export default function AuthPage() {
           <p className="mt-6 text-xs text-center text-gray-400">
             By continuing, you agree to store your videos in your Google Drive.
             <br />
-            We'll ask for Drive permissions after you sign in.
+            We'll request Drive permissions during sign-in to save your
+            creations.
           </p>
         </div>
 

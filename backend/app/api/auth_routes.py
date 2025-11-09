@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,6 +21,7 @@ from app.core.settings import Settings, get_settings
 from app.db.models import Profile
 from app.db.session import get_session
 from app.services.auth import AuthenticatedUser, get_current_user
+from app.services.security import require_signed_request
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ async def google_oauth_login(
 async def google_oauth_initiate(
     user: AuthenticatedUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
+    _: None = Depends(require_signed_request),
 ) -> dict:
     """
     Initiate Google OAuth flow and return the consent screen URL as JSON.
@@ -216,10 +218,65 @@ async def google_oauth_callback(
         )
 
 
+@router.post("/sync-tokens")
+async def sync_google_tokens(
+    request: dict,
+    user: AuthenticatedUser = Depends(get_current_user),
+    db_session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_signed_request),
+) -> dict:
+    """
+    Sync Google OAuth tokens from Supabase authentication.
+    Called after user authenticates with Google through Supabase.
+    """
+    google_access_token = request.get("google_access_token")
+    google_refresh_token = request.get("google_refresh_token")
+    
+    if not google_access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing google_access_token"
+        )
+    
+    # Get or create profile
+    stmt = select(Profile).where(Profile.id == user.id)
+    result = await db_session.execute(stmt)
+    profile = result.scalar_one_or_none()
+    
+    if not profile:
+        # Create profile if it doesn't exist
+        profile = Profile(
+            id=user.id,
+            email=user.email,
+            name=user.email.split("@")[0] if user.email else "User",
+        )
+    
+    # Store Google tokens
+    profile.google_access_token = google_access_token
+    if google_refresh_token:
+        profile.google_refresh_token = google_refresh_token
+    
+    # Set token expiry (Google tokens typically last 1 hour)
+    profile.google_token_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
+    
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+    
+    logger.info(f"Synced Google OAuth tokens for user {user.id}")
+    
+    return {
+        "success": True,
+        "message": "Google Drive tokens synced successfully",
+        "drive_connected": True,
+    }
+
+
 @router.post("/disconnect", response_model=GoogleOAuthDisconnectResponse)
 async def google_oauth_disconnect(
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_signed_request),
 ) -> GoogleOAuthDisconnectResponse:
     """
     Disconnect Google Drive and remove stored tokens.

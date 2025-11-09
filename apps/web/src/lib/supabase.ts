@@ -18,7 +18,16 @@ const createSupabaseClient = () => {
     });
   }
 
-  return createClient(supabaseUrl, supabaseKey);
+  return createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      // Enable automatic token refresh
+      autoRefreshToken: true,
+      // Store session in localStorage to persist across page loads
+      persistSession: true,
+      // Detect session from URL (important for OAuth callback)
+      detectSessionInUrl: true,
+    },
+  });
 };
 
 export const supabase = createSupabaseClient();
