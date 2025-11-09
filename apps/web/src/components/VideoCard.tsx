@@ -11,70 +11,61 @@ interface VideoCardProps {
 }
 
 export default function VideoCard({ video, onRecreate }: VideoCardProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
   const { likeVideo, dislikeVideo, trackView } = useVideoActions();
   const videoSrc = getPreferredVideoUrl(video) ?? video.videoUrl;
   const thumbnailSrc = getPreferredThumbnailUrl(video) ?? video.thumbnailUrl;
   const hasTrackedViewRef = useRef(false);
 
+  // Check if this is a Google Drive embed URL
+  const isGoogleDriveEmbed = videoSrc?.includes('drive.google.com/file/d/') && videoSrc?.includes('/preview');
+
   const playVideo = useCallback(() => {
-    if (!videoRef.current) {
+    if (!iframeRef.current || !isGoogleDriveEmbed) {
       return;
     }
 
-    const element = videoRef.current;
-    const playPromise = element.play();
-
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          setIsPlaying(true);
-        })
-        .catch((error) => {
-          console.log("Auto-play prevented:", error);
-          setIsPlaying(false);
-        });
-    }
-  }, []);
+    // For Google Drive embeds, we need to reload the iframe with autoplay parameter
+    const embedUrl = new URL(videoSrc!);
+    embedUrl.searchParams.set('autoplay', '1');
+    iframeRef.current.src = embedUrl.toString();
+    setIsPlaying(true);
+  }, [videoSrc, isGoogleDriveEmbed]);
 
   const pauseVideo = useCallback(() => {
-    if (!videoRef.current) {
+    if (!iframeRef.current || !isGoogleDriveEmbed) {
       return;
     }
 
-    videoRef.current.pause();
+    // For Google Drive embeds, we can't directly pause, so we'll reload without autoplay
+    const embedUrl = new URL(videoSrc!);
+    embedUrl.searchParams.delete('autoplay');
+    iframeRef.current.src = embedUrl.toString();
     setIsPlaying(false);
-  }, []);
+  }, [videoSrc, isGoogleDriveEmbed]);
 
   const handleVideoClick = () => {
-    if (!videoRef.current) {
-      return;
-    }
-
     if (isPlaying) {
       pauseVideo();
     } else {
-      videoRef.current.muted = false;
-      setIsMuted(false);
       playVideo();
     }
   };
 
   useEffect(() => {
     hasTrackedViewRef.current = false;
-    setIsMuted(true);
     setIsPlaying(false);
 
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-      videoRef.current.muted = true;
+    // Reset iframe src when video changes
+    if (iframeRef.current && isGoogleDriveEmbed) {
+      const embedUrl = new URL(videoSrc!);
+      embedUrl.searchParams.delete('autoplay');
+      iframeRef.current.src = embedUrl.toString();
     }
-  }, [video.id]);
+  }, [video.id, videoSrc, isGoogleDriveEmbed]);
 
-  // Track view when video is in viewport
+  // Track view and auto-play when video is in viewport
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -88,15 +79,13 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
             });
           }
 
-          if (videoRef.current) {
-            videoRef.current.muted = isMuted;
-          }
-
-          if (video.status === "completed" && videoSrc) {
+          // Auto-play when video comes into view
+          if (video.status === "completed" && videoSrc && !isPlaying) {
             playVideo();
           }
         } else {
-          if (videoRef.current && !videoRef.current.paused) {
+          // Pause when video goes out of view
+          if (isPlaying) {
             pauseVideo();
           }
         }
@@ -104,12 +93,13 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
       { threshold: 0.5 }
     );
 
-    if (videoRef.current) {
-      observer.observe(videoRef.current);
+    const element = iframeRef.current;
+    if (element) {
+      observer.observe(element);
     }
 
     return () => observer.disconnect();
-  }, [video.id, trackView, video.status, videoSrc, pauseVideo, playVideo, isMuted]);
+  }, [video.id, trackView, video.status, videoSrc, pauseVideo, playVideo, isPlaying]);
 
   useEffect(() => {
     return () => {
@@ -145,26 +135,39 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
       {/* Video Player */}
       <div className="relative aspect-9/16 bg-[#0D0221] border-4 border-[#9D4EDD]">
         {video.status === "completed" && videoSrc ? (
-          <video
-            ref={videoRef}
-            src={videoSrc}
-            poster={thumbnailSrc}
-            loop
-            playsInline
-            muted={isMuted}
-            preload="metadata"
-            className="w-full h-full object-contain"
-            style={{ imageRendering: "pixelated" }}
-            onError={(e) => {
-              console.error("Video failed to load:", videoSrc, e);
-            }}
-            onClick={handleVideoClick}
-            onLoadedData={() => {
-              if (video.status === "completed" && videoSrc && isPlaying) {
-                playVideo();
-              }
-            }}
-          />
+          isGoogleDriveEmbed ? (
+            <iframe
+              ref={iframeRef}
+              src={videoSrc}
+              width="100%"
+              height="100%"
+              frameBorder="0"
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              className="w-full h-full"
+              onClick={handleVideoClick}
+              onLoad={() => {
+                // Track when iframe loads
+                console.log("Google Drive video loaded:", videoSrc);
+              }}
+            />
+          ) : (
+            // Fallback for non-Google Drive videos (though we shouldn't have any)
+            <video
+              src={videoSrc}
+              poster={thumbnailSrc}
+              loop
+              playsInline
+              muted
+              preload="metadata"
+              className="w-full h-full object-contain"
+              style={{ imageRendering: "pixelated" }}
+              onError={(e) => {
+                console.error("Video failed to load:", videoSrc, e);
+              }}
+              onClick={handleVideoClick}
+            />
+          )
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -181,7 +184,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
         )}
 
         {/* Play/Pause Overlay */}
-        {video.status === "completed" && !isPlaying && (
+        {video.status === "completed" && !isPlaying && isGoogleDriveEmbed && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div
               className="bg-[#240046] border-4 border-[#00F5FF] p-4 pixel-corners"
