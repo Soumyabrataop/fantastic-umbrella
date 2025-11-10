@@ -162,15 +162,25 @@ export function resolveMediaUrl(url?: string | null): string | undefined {
 }
 
 export function getPreferredVideoUrl(video: Video): string | undefined {
-  // Use proxy endpoint for videos with Google Drive file IDs
-  if (video.googleDriveFileId && video.id) {
+  // Match backend logic exactly:
+  // 1. For unpublished videos (drafts), use stream endpoint from Google Drive
+  // 2. For published videos, use R2 URL if available, otherwise video_url
+
+  if (!video.isPublished && video.googleDriveFileId) {
     return `/api/backend/videos/${video.id}/stream`;
   }
 
-  // Fallback to direct URLs for non-Google Drive videos
+  if (video.r2VideoUrl) {
+    return video.r2VideoUrl;
+  }
+
+  if (video.videoUrl) {
+    return resolveMediaUrl(video.videoUrl);
+  }
+
+  // Fallback to assets
   const videoAsset = video.assets?.find((asset) => asset.assetType === "video");
   const candidates = [
-    video.videoUrl,
     videoAsset?.publicUrl,
     videoAsset?.filePath,
     videoAsset?.sourceUrl,
@@ -458,8 +468,10 @@ export interface Video {
   status: "pending" | "processing" | "completed" | "failed";
   rankingScore?: number;
   durationSeconds?: number;
+  isPublished: boolean; // Whether video is published to R2
   assets?: VideoAsset[];
   googleDriveFileId?: string; // Google Drive file ID for videos stored in Drive
+  r2VideoUrl?: string; // Cloudflare R2 URL for published videos
 }
 
 export interface CreateVideoRequest {
@@ -484,6 +496,7 @@ export interface UserProfile {
   videosCreated: number;
   totalLikes: number;
   totalDislikes?: number;
+  enterprise: boolean; // Only enterprise users can create videos
   lastActiveAt?: string;
   createdAt: string;
 }

@@ -1,14 +1,21 @@
+"""
+Token Refresher Service
+Fetches OAuth access tokens from Google Labs session API using cookies
+"""
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 import httpx
 
-from app.core.settings import Settings, get_settings
-from app.utils.cookie_loader import load_cookie_entries, load_cookie_map
+if TYPE_CHECKING:
+    from app.core.settings import Settings
+
+logger = logging.getLogger("uvicorn.error").getChild("token_refresher")
 
 SESSION_URL = "https://labs.google/fx/api/auth/session"
 
@@ -38,12 +45,26 @@ class CookieExpiredError(Exception):
 
 
 class TokenRefresher:
-    def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
+    """Fetches and manages OAuth access tokens from Google Labs"""
+    
+    def __init__(self, settings: "Settings") -> None:
+        self.settings = settings
 
-    async def fetch_session(self) -> SessionData:
-        cookies = load_cookie_map(self.settings.flow_cookie_file)
-        headers = {**DEFAULT_HEADERS, "cookie": _format_cookie_header(cookies)}
+    async def fetch_session(self, cookies: Dict[str, str]) -> SessionData:
+        """
+        Fetch session data from Google Labs API
+        
+        Args:
+            cookies: Dictionary of cookie name-value pairs
+            
+        Returns:
+            SessionData with access token and expiry
+            
+        Raises:
+            CookieExpiredError: If cookies are expired or invalid
+            RuntimeError: If API request fails
+        """
+        headers = {**DEFAULT_HEADERS, "cookie": self._format_cookie_header(cookies)}
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(15.0)) as client:
             response = await client.get(SESSION_URL, headers=headers)
@@ -62,43 +83,34 @@ class TokenRefresher:
             return SessionData(
                 access_token=payload["access_token"],
                 expires=expires,
-                user=payload["user"],
+                user=payload.get("user", {}),
             )
         except KeyError as exc:
             raise CookieExpiredError(f"Session payload missing field: {exc}") from exc
 
-    def persist_token(self, session: SessionData) -> None:
-        entries = load_cookie_entries(self.settings.flow_cookie_file)
-        updated = False
-        for entry in entries:
-            if isinstance(entry, dict) and entry.get("name", "").lower() in ("authorization", "bearer", "bearer_token", "bearertoken"):
-                entry["name"] = "authorization"
-                entry["value"] = session.access_token
-                entry["httpOnly"] = False
-                entry["secure"] = True
-                entry.setdefault("path", "/")
-                updated = True
-        if not updated:
-            entries.append(
-                {
-                    "domain": "labs.google",
-                    "name": "authorization",
-                    "value": session.access_token,
-                    "path": "/",
-                    "secure": True,
-                    "httpOnly": False,
-                    "sameSite": "lax",
-                }
-            )
+    def persist_token_to_cookies(self, email: str, session: SessionData, cookies: Dict[str, str]) -> Dict[str, str]:
+        """
+        Add the access token to cookies dictionary
+        
+        Args:
+            email: Account email
+            session: Session data with access token
+            cookies: Existing cookies dictionary
+            
+        Returns:
+            Updated cookies dictionary with authorization token
+        """
+        # Add or update authorization cookie
+        cookies["authorization"] = session.access_token
+        logger.info(f"Added authorization token for {email} (expires: {session.expires.isoformat()})")
+        return cookies
 
-        self.settings.flow_cookie_file.write_text(json.dumps(entries, indent=4), encoding="utf-8")
+    def _format_cookie_header(self, cookies: Dict[str, str]) -> str:
+        """Format cookies as HTTP Cookie header"""
+        return "; ".join(f"{name}={value}" for name, value in cookies.items())
 
-
-def _format_cookie_header(cookies: Dict[str, str]) -> str:
-    return "; ".join(f"{name}={value}" for name, value in cookies.items())
-
-
-def seconds_until_expiry(session: SessionData, margin_seconds: int = 60) -> float:
-    now = datetime.now(timezone.utc)
-    target = session.expires - timedelta(seconds=margin_seconds)
-    return max((target - now).total_seconds(), 0.0)
+    def seconds_until_expiry(self, session: SessionData, margin_seconds: int = 60) -> float:
+        """Calculate seconds until token expires (with margin)"""
+        now = datetime.now(timezone.utc)
+        target = session.expires - timedelta(seconds=margin_seconds)
+        return max((target - now).total_seconds(), 0.0)

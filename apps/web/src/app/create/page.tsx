@@ -163,7 +163,7 @@ export default function CreatePage() {
     progressTargetRef.current = 100;
     setProgress(100);
     clearProgressInterval();
-    setPollingVideoId(null); // Stop polling
+    // Keep pollingVideoId so publish button works - just stop polling via queryEnabled
   };
 
   const handleVideoFailure = () => {

@@ -18,7 +18,6 @@ from app.schemas.video import CheckVideoStatusRequest, GenerateVideoRequest
 from app.services.flow_client import FlowClient
 from app.services.storage import StorageService
 from app.utils.flow_status import FlowStatusUpdate, parse_flow_status
-from app.utils.ranking import calculate_ranking_score
 
 logger = logging.getLogger("uvicorn.error").getChild("video_queue")
 
@@ -119,7 +118,7 @@ class VideoQueue:
         profile.last_active_at = datetime.now(timezone.utc)
         video.status = VideoStatus.PROCESSING
         video.failure_reason = None
-        video.ranking_score = calculate_ranking_score(video)
+        video.ranking_score = 0.0  # Default ranking score
         await session.commit()
 
     async def _run_generation(self, session: AsyncSession, video: Video, scene_id: str) -> None:
@@ -229,14 +228,14 @@ class VideoQueue:
                 profile.videos_created += 1
             profile.last_active_at = datetime.now(timezone.utc)
 
-        video.ranking_score = calculate_ranking_score(video)
+        video.ranking_score = 0.0  # Default ranking score
         await session.commit()
 
     async def _mark_failed(self, session: AsyncSession, video: Video, *, reason: str | None) -> None:
         """Mark video as failed with descriptive error message."""
         video.status = VideoStatus.FAILED
         video.failure_reason = reason or "Unknown error occurred during video generation"
-        video.ranking_score = calculate_ranking_score(video)
+        video.ranking_score = 0.0  # Default ranking score
         
         logger.error(
             f"Marking video {video.id} as failed: {video.failure_reason}",

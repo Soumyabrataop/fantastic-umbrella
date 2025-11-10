@@ -25,7 +25,6 @@ from app.db.models import (
     VideoAsset,
     VideoReaction,
     VideoStatus,
-    VideoView,
 )
 from app.db.session import get_session
 from app.schemas.media import (
@@ -53,12 +52,35 @@ from app.services.security import require_signed_request
 from app.services.storage import StorageService
 from app.services.video_queue import VideoJob, VideoQueue, get_video_queue
 from app.utils.flow_status import parse_flow_status
-from app.utils.ranking import calculate_creator_score, calculate_ranking_score
 
 router = APIRouter()
 flow_client = FlowClient()
 storage_service = StorageService()
 logger = logging.getLogger(__name__)
+
+
+def calculate_ranking_score(video: Video) -> float:
+    """Simple ranking score based on likes, dislikes, and views"""
+    likes = video.likes_count or 0
+    dislikes = video.dislikes_count or 0
+    views = video.views_count or 0
+    
+    # Simple scoring: (likes - dislikes) / (views + 1)
+    # Add 1 to views to avoid division by zero
+    engagement = likes - dislikes
+    return float(engagement / (views + 1))
+
+
+def calculate_creator_score(
+    last_active_at: datetime | None,
+    videos_created: int,
+    total_likes: int,
+    total_dislikes: int,
+) -> float:
+    """Simple creator score based on activity and engagement"""
+    engagement = total_likes - total_dislikes
+    # Simple formula: engagement + videos_created
+    return float(engagement + videos_created)
 
 
 @router.get("/health")
@@ -78,17 +100,10 @@ async def stream_video(
     video_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    """Proxy video streaming from Google Drive to avoid CORS/CSP issues"""
+    """Proxy video streaming from Google Drive - uses authenticated download for unpublished videos"""
     try:
         # Get video from database
         video = await _get_video(session, video_id)
-        
-        # Check if video is published (for public access)
-        if not video.is_published:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Video not found or not published"
-            )
         
         # Get the Google Drive file ID
         drive_file_id = video.google_drive_file_id
@@ -98,28 +113,33 @@ async def stream_video(
                 detail="Video file not available"
             )
         
-        # Stream from Google Drive using direct download URL
-        drive_url = f"https://drive.google.com/uc?export=download&id={drive_file_id}"
+        # Get Drive service for the video owner to download the file
+        drive_service = await storage_service.get_drive_service_for_user(session, video.user_id)
+        if not drive_service:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to access video storage"
+            )
         
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-            response = await client.get(drive_url)
-            
-            if response.status_code != 200:
-                logger.error(f"Failed to fetch video from Drive: {response.status_code}")
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Failed to fetch video from storage"
-                )
+        # Download video from Drive using authenticated service
+        try:
+            video_bytes = await asyncio.to_thread(drive_service.download_file, drive_file_id)
             
             return StreamingResponse(
-                io.BytesIO(response.content),
+                io.BytesIO(video_bytes),
                 media_type="video/mp4",
                 headers={
                     "Accept-Ranges": "bytes",
-                    "Content-Length": str(len(response.content)),
+                    "Content-Length": str(len(video_bytes)),
                     "Cache-Control": "public, max-age=3600",
                     "Access-Control-Allow-Origin": "*",
                 }
+            )
+        except Exception as download_error:
+            logger.error(f"Failed to download video from Drive: {download_error}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch video from storage"
             )
     
     except HTTPException:
@@ -225,58 +245,21 @@ async def sync_video_status(
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
+    """
+    Get video status from database WITHOUT calling Flow API.
+    The background worker handles all Flow API polling to save credits.
+    """
     video = await _get_video(session, video_id)
 
     if video.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can sync this video")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the owner can access this video")
 
-    if payload:
-        if payload.operation_name:
-            video.operation_name = payload.operation_name
-        if payload.scene_id:
-            video.scene_id = payload.scene_id
-
-    if not video.operation_name or not video.scene_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video is missing Flow metadata for polling")
-
-    try:
-        response = await flow_client.check_video_status(
-            CheckVideoStatusRequest(
-                operationName=video.operation_name,
-                sceneId=video.scene_id,
-            )
-        )
-    except httpx.HTTPStatusError as exc:
-        detail = _extract_error_detail(exc)
-        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 - upstream resilience
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Failed to poll Flow status") from exc
-
-    update = parse_flow_status(response)
-    if update.status is not None:
-        video.status = update.status
-    if update.failure_reason:
-        video.failure_reason = update.failure_reason
-    if update.video_url:
-        video.video_url = update.video_url
-    if update.thumbnail_url:
-        video.thumbnail_url = update.thumbnail_url
-    if update.duration_seconds is not None:
-        video.duration_seconds = update.duration_seconds
-
-    await storage_service.handle_status_update(session, video, update)
-
-    video.ranking_score = calculate_ranking_score(video)
-
-    owner_profile = await _ensure_profile(session, video.user_id)
-    owner_profile.last_active_at = datetime.now(timezone.utc)
-
-    await session.flush()
+    # Just return the current database status
+    # The video queue worker is handling all Flow API polling in the background
+    # This saves API credits by not making redundant Flow API calls
     
-    # No need to refresh URLs - we use public URLs that don't expire
-    return _serialize_video(video, creator=owner_profile)
+    logger.info(f"Returning cached status for video {video_id}: {video.status}")
+    return _serialize_video(video)
 
 
 @router.get("/videos/feed", response_model=FeedResponse)
@@ -345,7 +328,7 @@ async def publish_video(
     session: AsyncSession = Depends(get_session),
 ) -> VideoRead:
     """
-    Publish a video - makes it visible in feed and sets Drive file permissions to public.
+    Publish a video - copies from Google Drive to R2 and makes it visible in feed.
     """
     video = await _get_video(session, video_id)
     
@@ -357,33 +340,39 @@ async def publish_video(
     if video.is_published:
         return _serialize_video(video)
     
-    # Get Drive service to update permissions
-    drive_service = await storage_service.get_drive_service_for_user(session, user.id)
+    # Check if video has completed processing
+    if video.status != VideoStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Video must be completed before publishing"
+        )
     
-    if drive_service:
-        try:
-            # Make Drive files public
-            if video.google_drive_file_id:
-                await asyncio.to_thread(drive_service.make_public, video.google_drive_file_id)
-                logger.info(f"Made video {video_id} public on Drive: {video.google_drive_file_id}")
-            
-            if video.google_drive_thumbnail_id:
-                await asyncio.to_thread(drive_service.make_public, video.google_drive_thumbnail_id)
-                logger.info(f"Made thumbnail for video {video_id} public on Drive: {video.google_drive_thumbnail_id}")
-        except Exception as e:
-            logger.error(f"Failed to update Drive permissions for video {video_id}: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update Drive permissions"
-            )
+    # Check if video has Drive file
+    if not video.google_drive_file_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Video file not found in storage"
+        )
     
-    # Mark as published
-    video.is_published = True
-    session.add(video)
-    await session.commit()
-    
-    logger.info(f"Published video {video_id}")
-    return _serialize_video(video)
+    try:
+        # Upload to R2 using storage service
+        logger.info(f"Publishing video {video_id} to R2...")
+        await storage_service.upload_video_to_r2(session, video)
+        
+        # Mark as published
+        video.is_published = True
+        session.add(video)
+        await session.commit()
+        
+        logger.info(f"Successfully published video {video_id} to R2")
+        return _serialize_video(video)
+        
+    except Exception as e:
+        logger.error(f"Failed to publish video {video_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to publish video: {str(e)}"
+        )
 
 
 @router.post("/videos/{video_id}/unpublish")
@@ -515,9 +504,8 @@ async def track_view(
     user: AuthenticatedUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TrackViewResponse:
+    """Simply increment the view counter without tracking individual views"""
     video = await _get_video(session, video_id)
-    view = VideoView(video_id=video.id, user_id=user.id)
-    session.add(view)
     video.views_count += 1
     video.ranking_score = calculate_ranking_score(video)
 
@@ -696,7 +684,16 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
         ranking_score = float(video.ranking_score) if isinstance(video.ranking_score, Decimal) else video.ranking_score
 
     assets: list[VideoAssetRead] = []
-    video_url = video.video_url or ""
+    
+    # For unpublished videos (drafts), use stream endpoint from Google Drive
+    # For published videos, use R2 URL if available, otherwise video_url
+    if not video.is_published and video.google_drive_file_id:
+        video_url = f"/api/backend/videos/{video.id}/stream"
+    elif getattr(video, 'r2_video_url', None):
+        video_url = video.r2_video_url
+    else:
+        video_url = video.video_url or ""
+    
     thumbnail_url = video.thumbnail_url
     
     try:
@@ -728,8 +725,10 @@ def _serialize_video(video: Video, creator: Profile | None = None) -> VideoRead:
         created_at=video.created_at,
         status=video.status,
         ranking_score=ranking_score,
+        is_published=video.is_published,
         assets=assets,
         google_drive_file_id=video.google_drive_file_id,
+        r2_video_url=getattr(video, 'r2_video_url', None),
     )
 
 
@@ -769,11 +768,19 @@ async def _create_and_enqueue_video(
     user: AuthenticatedUser,
     queue: VideoQueue,
 ) -> tuple[Video, Profile]:
+    # Ensure profile exists BEFORE creating video to avoid foreign key violation
+    profile = await _ensure_profile(session, user.id, user.email)
+    
+    # Check if user has enterprise access
+    if not profile.enterprise:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only enterprise users can create videos"
+        )
+    
     settings = get_settings()
     await _enforce_creation_cooldown(session, user.id, settings.video_creation_cooldown_seconds)
 
-    # Ensure profile exists BEFORE creating video to avoid foreign key violation
-    profile = await _ensure_profile(session, user.id, user.email)
     profile.last_active_at = datetime.now(timezone.utc)
 
     scene_id = payload.scene_id or str(uuid.uuid4())
@@ -800,9 +807,43 @@ async def _enforce_creation_cooldown(
     user_id: uuid.UUID,
     cooldown_seconds: int,
 ) -> None:
+    """
+    Enforce cooldown between video creations.
+    Only checks PENDING/PROCESSING videos to allow creating new videos after completion.
+    """
     if cooldown_seconds <= 0:
         return
 
+    # Check if user has any pending or processing videos
+    result = await session.execute(
+        select(Video.created_at, Video.status)
+        .where(
+            Video.user_id == user_id,
+            Video.status.in_([VideoStatus.PENDING, VideoStatus.PROCESSING])
+        )
+        .order_by(Video.created_at.desc())
+        .limit(1)
+    )
+    row = result.first()
+    
+    # If there's a video still processing, enforce cooldown from its creation time
+    if row:
+        last_created_at, video_status = row
+        created_at = last_created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+        elapsed = (now - created_at).total_seconds()
+        
+        if elapsed < cooldown_seconds:
+            remaining = int(cooldown_seconds - elapsed)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"You have a video still processing. Please wait {remaining} seconds or let it complete first.",
+            )
+    
+    # Also check the last completed/failed video for spam protection
     result = await session.execute(
         select(Video.created_at)
         .where(Video.user_id == user_id)
@@ -810,21 +851,23 @@ async def _enforce_creation_cooldown(
         .limit(1)
     )
     last_created_at = result.scalar_one_or_none()
-    if last_created_at is None:
-        return
+    
+    if last_created_at:
+        created_at = last_created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
 
-    created_at = last_created_at
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-
-    now = datetime.now(timezone.utc)
-    elapsed = (now - created_at).total_seconds()
-    if elapsed < cooldown_seconds:
-        remaining = int(cooldown_seconds - elapsed)
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Please wait {remaining} seconds before creating another video",
-        )
+        now = datetime.now(timezone.utc)
+        elapsed = (now - created_at).total_seconds()
+        
+        # Use a shorter cooldown (10 seconds) for completed videos
+        spam_protection_seconds = min(10, cooldown_seconds)
+        if elapsed < spam_protection_seconds:
+            remaining = int(spam_protection_seconds - elapsed)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {remaining} seconds before creating another video (spam protection)",
+            )
 
 
 async def _get_video(session: AsyncSession, video_id: uuid.UUID) -> Video:

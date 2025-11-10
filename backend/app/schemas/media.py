@@ -56,8 +56,10 @@ class VideoRead(BaseModel):
     created_at: datetime = Field(..., alias="createdAt")
     status: VideoStatus
     ranking_score: float | None = Field(None, alias="rankingScore")
+    is_published: bool = Field(False, alias="isPublished")
     assets: list[VideoAssetRead] = Field(default_factory=list)
     google_drive_file_id: str | None = Field(None, alias="googleDriveFileId")
+    r2_video_url: str | None = Field(None, alias="r2VideoUrl")
 
 
 class FeedResponse(BaseModel):
@@ -95,6 +97,7 @@ class ProfileRead(BaseModel):
     videos_created: int = Field(0, alias="videosCreated")
     total_likes: int = Field(0, alias="totalLikes")
     total_dislikes: int = Field(0, alias="totalDislikes")
+    enterprise: bool = False
     last_active_at: datetime | None = Field(None, alias="lastActiveAt")
     created_at: datetime = Field(..., alias="createdAt")
 

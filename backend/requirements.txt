@@ -12,3 +12,5 @@ google-auth-httplib2
 google-api-python-client
 # Browser automation for cookie refresh
 playwright
+# Cloudflare R2 (S3-compatible)
+boto3

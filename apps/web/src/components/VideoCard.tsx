@@ -1,16 +1,27 @@
 "use client";
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { Video, getPreferredVideoUrl, getPreferredThumbnailUrl } from "@/utils/api";
+import {
+  Video,
+  getPreferredVideoUrl,
+  getPreferredThumbnailUrl,
+} from "@/utils/api";
 import { formatViews, formatTimeAgo } from "@/utils/ranking";
 import { useVideoActions } from "@/hooks/useVideoActions";
 
 interface VideoCardProps {
   video: Video;
   onRecreate?: (videoId: string) => void;
+  horizontal?: boolean;
+  showActions?: boolean;
 }
 
-export default function VideoCard({ video, onRecreate }: VideoCardProps) {
+export default function VideoCard({
+  video,
+  onRecreate,
+  horizontal = false,
+  showActions = true,
+}: VideoCardProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const { likeVideo, dislikeVideo, trackView } = useVideoActions();
@@ -19,7 +30,9 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
   const hasTrackedViewRef = useRef(false);
 
   // Check if this is a Google Drive embed URL
-  const isGoogleDriveEmbed = videoSrc?.includes('drive.google.com/file/d/') && videoSrc?.includes('/preview');
+  const isGoogleDriveEmbed =
+    videoSrc?.includes("drive.google.com/file/d/") &&
+    videoSrc?.includes("/preview");
 
   const playVideo = useCallback(() => {
     if (!iframeRef.current || !isGoogleDriveEmbed) {
@@ -28,7 +41,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
 
     // For Google Drive embeds, we need to reload the iframe with autoplay parameter
     const embedUrl = new URL(videoSrc!);
-    embedUrl.searchParams.set('autoplay', '1');
+    embedUrl.searchParams.set("autoplay", "1");
     iframeRef.current.src = embedUrl.toString();
     setIsPlaying(true);
   }, [videoSrc, isGoogleDriveEmbed]);
@@ -40,7 +53,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
 
     // For Google Drive embeds, we can't directly pause, so we'll reload without autoplay
     const embedUrl = new URL(videoSrc!);
-    embedUrl.searchParams.delete('autoplay');
+    embedUrl.searchParams.delete("autoplay");
     iframeRef.current.src = embedUrl.toString();
     setIsPlaying(false);
   }, [videoSrc, isGoogleDriveEmbed]);
@@ -60,7 +73,7 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
     // Reset iframe src when video changes
     if (iframeRef.current && isGoogleDriveEmbed) {
       const embedUrl = new URL(videoSrc!);
-      embedUrl.searchParams.delete('autoplay');
+      embedUrl.searchParams.delete("autoplay");
       iframeRef.current.src = embedUrl.toString();
     }
   }, [video.id, videoSrc, isGoogleDriveEmbed]);
@@ -70,7 +83,11 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          if (!hasTrackedViewRef.current && video.status === "completed" && videoSrc) {
+          if (
+            !hasTrackedViewRef.current &&
+            video.status === "completed" &&
+            videoSrc
+          ) {
             hasTrackedViewRef.current = true;
             trackView.mutate(video.id, {
               onError: () => {
@@ -99,7 +116,15 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
     }
 
     return () => observer.disconnect();
-  }, [video.id, trackView, video.status, videoSrc, pauseVideo, playVideo, isPlaying]);
+  }, [
+    video.id,
+    trackView,
+    video.status,
+    videoSrc,
+    pauseVideo,
+    playVideo,
+    isPlaying,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -122,18 +147,17 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
   };
 
   return (
-    <div className="retro-card overflow-hidden mb-6 max-w-md mx-auto relative">
-      {/* Scanlines overlay */}
-      <div
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{
-          background:
-            "repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.15) 1px, transparent 1px, transparent 2px)",
-        }}
-      ></div>
-
+    <div
+      className={`bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden mb-6 relative shadow-lg ${
+        horizontal ? "flex flex-row max-w-full" : "max-w-md mx-auto"
+      }`}
+    >
       {/* Video Player */}
-      <div className="relative aspect-9/16 bg-[#0D0221] border-4 border-[#9D4EDD]">
+      <div
+        className={`relative bg-black ${
+          horizontal ? "w-64 aspect-9/16 shrink-0" : "aspect-9/16"
+        }`}
+      >
         {video.status === "completed" && videoSrc ? (
           isGoogleDriveEmbed ? (
             <iframe
@@ -199,123 +223,80 @@ export default function VideoCard({ video, onRecreate }: VideoCardProps) {
       </div>
 
       {/* Video Info */}
-      <div className="p-4 bg-linear-to-b from-[#240046] to-[#3C096C]">
-        <div className="mb-3">
-          <div className="retro-input p-3 mb-2">
-            <p className="text-[#00F5FF] text-lg font-['VT323'] line-clamp-3">
-              &gt; {video.prompt}
-            </p>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[#FFBE0B] font-['VT323'] text-base">
-              ◉ {video.username || "ANON"}
+      <div
+        className={`p-4 bg-linear-to-b from-gray-900 to-black ${
+          horizontal ? "flex-1 flex flex-col justify-center" : ""
+        }`}
+      >
+        <div className={showActions ? "mb-3" : ""}>
+          <p className="text-white text-base mb-3 line-clamp-2">
+            {video.prompt}
+          </p>
+          <div
+            className={`flex items-center ${
+              horizontal ? "flex-col items-start gap-2" : "justify-between"
+            } text-sm`}
+          >
+            <span className="text-gray-400 font-medium">
+              @{video.username || "anonymous"}
             </span>
-            <span className="text-[#9D4EDD] font-['VT323'] text-base">
-              👁 {formatViews(video.views)} • {formatTimeAgo(video.createdAt)}
+            <span className="text-gray-500 text-xs">
+              {formatViews(video.views)} views •{" "}
+              {formatTimeAgo(video.createdAt)}
             </span>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-3 border-t-2 border-[#9D4EDD]">
-          {/* Like Button */}
-          <button
-            onClick={handleLike}
-            disabled={likeVideo.isPending}
-            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all disabled:opacity-50"
-            style={{
-              fontFamily: "Google Sans Text",
-              fontSize: "0.75rem",
-              fontStyle: "normal",
-              fontWeight: 500,
-              lineHeight: "1rem",
-              backdropFilter: "blur(0px) opacity(10%)",
-              color: "rgb(255, 255, 255)",
-              whiteSpace: "nowrap",
-              height: "2rem",
-              padding: "0rem 0.875rem 0rem 0.875rem",
-              background: "rgba(255, 255, 255, 0.05)",
-              borderRadius: "4px",
-            }}
+        {/* Action Buttons - Only show if showActions is true */}
+        {showActions && (
+          <div
+            className={`flex gap-2 pt-3 border-t border-gray-800 ${
+              horizontal ? "flex-wrap" : ""
+            }`}
           >
-            <span className="text-lg">👍</span>
-            <span>{video.likes}</span>
-          </button>
+            {/* Like Button */}
+            <button
+              onClick={handleLike}
+              disabled={likeVideo.isPending}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <span className="text-base">👍</span>
+              <span>{video.likes}</span>
+            </button>
 
-          {/* Dislike Button */}
-          <button
-            onClick={handleDislike}
-            disabled={dislikeVideo.isPending}
-            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all disabled:opacity-50"
-            style={{
-              fontFamily: "Google Sans Text",
-              fontSize: "0.75rem",
-              fontStyle: "normal",
-              fontWeight: 500,
-              lineHeight: "1rem",
-              backdropFilter: "blur(0px) opacity(10%)",
-              color: "rgb(255, 255, 255)",
-              whiteSpace: "nowrap",
-              height: "2rem",
-              padding: "0rem 0.875rem 0rem 0.875rem",
-              background: "rgba(255, 255, 255, 0.05)",
-              borderRadius: "4px",
-            }}
-          >
-            <span className="text-lg">👎</span>
-            <span>{video.dislikes}</span>
-          </button>
+            {/* Dislike Button */}
+            <button
+              onClick={handleDislike}
+              disabled={dislikeVideo.isPending}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <span className="text-base">👎</span>
+              <span>{video.dislikes}</span>
+            </button>
 
-          {/* Recreate Button */}
-          <button
-            onClick={handleRecreate}
-            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all"
-            style={{
-              fontFamily: "Google Sans Text",
-              fontSize: "0.75rem",
-              fontStyle: "normal",
-              fontWeight: 500,
-              lineHeight: "1rem",
-              backdropFilter: "blur(0px) opacity(10%)",
-              color: "rgb(255, 255, 255)",
-              whiteSpace: "nowrap",
-              height: "2rem",
-              padding: "0rem 0.875rem 0rem 0.875rem",
-              background: "rgba(255, 255, 255, 0.05)",
-              borderRadius: "4px",
-            }}
-          >
-            <span className="text-lg">🔄</span>
-            <span>Recreate</span>
-          </button>
+            {/* Recreate Button */}
+            <button
+              onClick={handleRecreate}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <span className="text-base">🔄</span>
+              <span>Recreate</span>
+            </button>
 
-          {/* Share Button */}
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(
-                `${window.location.origin}/video/${video.id}`
-              );
-            }}
-            className="flex items-center gap-2 hover:bg-[rgba(255,255,255,0.1)] transition-all"
-            style={{
-              fontFamily: "Google Sans Text",
-              fontSize: "0.75rem",
-              fontStyle: "normal",
-              fontWeight: 500,
-              lineHeight: "1rem",
-              backdropFilter: "blur(0px) opacity(10%)",
-              color: "rgb(255, 255, 255)",
-              whiteSpace: "nowrap",
-              height: "2rem",
-              padding: "0rem 0.875rem 0rem 0.875rem",
-              background: "rgba(255, 255, 255, 0.05)",
-              borderRadius: "4px",
-            }}
-          >
-            <span className="text-lg">📤</span>
-            <span>Share</span>
-          </button>
-        </div>
+            {/* Share Button */}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(
+                  `${window.location.origin}/video/${video.id}`
+                );
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <span className="text-base">📤</span>
+              <span>Share</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

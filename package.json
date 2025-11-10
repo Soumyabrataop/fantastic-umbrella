@@ -7,12 +7,15 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --parallel",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "test": "turbo run test"
+    "dev": "pnpm --filter web dev",
+    "dev:all": "pnpm --parallel --filter \"./apps/*\" --filter \"./packages/*\" dev",
+    "build": "pnpm --filter @zappai/types build && pnpm --filter web build",
+    "build:types": "pnpm --filter @zappai/types build",
+    "lint": "pnpm --recursive lint",
+    "sync-types": "cd packages/types && python generate-types.py && cd ../.. && pnpm build:types",
+    "clean": "pnpm --recursive exec rm -rf node_modules .next dist"
   },
   "devDependencies": {
-    "turbo": "^1.11.0"
+    "typescript": "^5.3.3"
   }
 }

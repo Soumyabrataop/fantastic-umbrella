@@ -235,6 +235,39 @@ class GoogleDriveService:
             logger.error(f"Failed to make file private: {e}")
             raise
 
+    def download_file(self, file_id: str) -> bytes:
+        """
+        Download file content from Google Drive.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            File content as bytes
+        """
+        service = self._get_drive_service()
+
+        try:
+            from io import BytesIO
+            request = service.files().get_media(fileId=file_id)
+            file_buffer = BytesIO()
+            
+            from googleapiclient.http import MediaIoBaseDownload
+            downloader = MediaIoBaseDownload(file_buffer, request)
+            
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    logger.info(f"Download progress: {int(status.progress() * 100)}%")
+            
+            logger.info(f"Successfully downloaded file from Drive: {file_id}")
+            return file_buffer.getvalue()
+
+        except HttpError as e:
+            logger.error(f"Failed to download file from Drive: {e}")
+            raise
+
     def get_file_url(self, file_id: str) -> str:
         """
         Get download URL for a Drive file (works for video playback).

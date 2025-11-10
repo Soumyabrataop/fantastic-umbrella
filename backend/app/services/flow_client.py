@@ -10,6 +10,7 @@ import httpx
 
 from app.core.settings import Settings, get_settings
 from app.schemas.video import CheckVideoStatusRequest, GenerateVideoRequest
+from app.services.multi_account_cookies import MultiAccountCookieManager
 from app.utils.cookie_loader import CookieCredentials, load_cookie_credentials
 
 logger = logging.getLogger("uvicorn.error").getChild("flow_client")
@@ -36,41 +37,93 @@ _DEFAULT_HEADERS = {
 class FlowClient:
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings_override = settings
+        self._cookie_manager: MultiAccountCookieManager | None = None
+
+    def _get_cookie_manager(self, settings: Settings) -> MultiAccountCookieManager:
+        """Get or create the multi-account cookie manager"""
+        if self._cookie_manager is None:
+            self._cookie_manager = MultiAccountCookieManager(
+                cookie_file=settings.flow_cookie_file,
+                emails=settings.google_emails,
+                passwords=settings.google_passwords
+            )
+        return self._cookie_manager
 
     async def generate_video(self, request: GenerateVideoRequest) -> Dict[str, Any]:
         settings = self._settings_override or get_settings()
-        credentials = load_cookie_credentials(settings.flow_cookie_file)
-        payload = self._build_generate_payload(settings, request)
-        response, headers, request_id = await self._post(settings.flow_generate_url, payload, credentials)
-        if not response:
-            operation_name = _extract_operation_from_headers(headers)
-            if not operation_name:
-                logger.error(
-                    "Flow generate_video returned empty response",
-                    extra={"payload": payload, "headers": headers},
-                )
-                return {}
-
-            scene_id = None
+        cookie_manager = self._get_cookie_manager(settings)
+        
+        # Try with current account, rotate on failure
+        max_attempts = min(len(settings.google_emails), 3)  # Try up to 3 accounts
+        last_error = None
+        
+        for attempt in range(max_attempts):
             try:
-                scene_id = payload["requests"][0]["metadata"]["sceneId"]
-            except (KeyError, IndexError, TypeError):
-                scene_id = None
+                credentials = await self._get_credentials(cookie_manager)
+                payload = self._build_generate_payload(settings, request)
+                response, headers, request_id = await self._post(settings.flow_generate_url, payload, credentials)
+                
+                # Success! Mark account as healthy
+                account = cookie_manager.get_current_account()
+                logger.info(f"Video generation successful with account: {account['email']}")
+                
+                if not response:
+                    operation_name = _extract_operation_from_headers(headers)
+                    if not operation_name:
+                        logger.error(
+                            "Flow generate_video returned empty response",
+                            extra={"payload": payload, "headers": headers},
+                        )
+                        return {}
 
-            operation_entry: Dict[str, Any] = {
-                "operation": {"name": operation_name},
-                "sceneId": scene_id,
-                "status": "MEDIA_GENERATION_STATUS_PENDING",
-            }
-            if request_id:
-                operation_entry["metadata"] = {"xRequestId": request_id}
+                    scene_id = None
+                    try:
+                        scene_id = payload["requests"][0]["metadata"]["sceneId"]
+                    except (KeyError, IndexError, TypeError):
+                        scene_id = None
 
-            response = {"operations": [operation_entry]}
-        return response
+                    operation_entry: Dict[str, Any] = {
+                        "operation": {"name": operation_name},
+                        "sceneId": scene_id,
+                        "status": "MEDIA_GENERATION_STATUS_PENDING",
+                    }
+                    if request_id:
+                        operation_entry["metadata"] = {"xRequestId": request_id}
+
+                    response = {"operations": [operation_entry]}
+                return response
+                
+            except httpx.HTTPStatusError as e:
+                account = cookie_manager.get_current_account()
+                logger.warning(f"Account {account['email']} failed on attempt {attempt + 1}: {e}")
+                cookie_manager.mark_account_failure()
+                last_error = e
+                
+                # Rotate to next account if more attempts available
+                if attempt < max_attempts - 1:
+                    if cookie_manager.rotate_to_next_account():
+                        logger.info(f"Rotated to next account, retrying...")
+                        continue
+                    else:
+                        logger.error("No healthy accounts available for rotation")
+                        break
+            except Exception as e:
+                account = cookie_manager.get_current_account()
+                logger.error(f"Unexpected error with account {account['email']}: {e}")
+                last_error = e
+                break
+        
+        # All attempts failed
+        if last_error:
+            raise last_error
+        raise RuntimeError("Video generation failed after all account attempts")
 
     async def check_video_status(self, request: CheckVideoStatusRequest) -> Dict[str, Any]:
         settings = self._settings_override or get_settings()
-        credentials = load_cookie_credentials(settings.flow_cookie_file)
+        cookie_manager = self._get_cookie_manager(settings)
+        
+        # Status checks typically use the same account as generation
+        credentials = await self._get_credentials(cookie_manager)
         payload = self._build_status_payload(request)
         response, headers, _ = await self._post(settings.flow_status_url, payload, credentials)
         if not response:
@@ -79,6 +132,62 @@ class FlowClient:
                 extra={"payload": payload, "headers": headers},
             )
         return response
+
+    async def _get_credentials(self, cookie_manager: MultiAccountCookieManager) -> CookieCredentials:
+        """
+        Get credentials for the current account
+        
+        Fetches access token from Google session API if not present in cookies
+        """
+        current_cookies = cookie_manager.get_current_cookies()
+        account = cookie_manager.get_current_account()
+        
+        if not current_cookies:
+            # Fallback: load from legacy cookie file
+            logger.warning(f"No cookies for account {account['email']}, using legacy cookie file")
+            settings = self._settings_override or get_settings()
+            return load_cookie_credentials(settings.flow_cookie_file)
+        
+        # Check if we have a valid authorization token
+        bearer_token = current_cookies.get("authorization", "")
+        
+        if not bearer_token or bearer_token.strip() == "":
+            # Need to fetch access token from Google session API
+            logger.info(f"Fetching access token for {account['email']}")
+            
+            try:
+                from app.services.token_refresher import TokenRefresher
+                settings = self._settings_override or get_settings()
+                token_refresher = TokenRefresher(settings)
+                
+                # Fetch session data (includes access token)
+                session_data = await token_refresher.fetch_session(current_cookies)
+                
+                # Add token to cookies
+                current_cookies = token_refresher.persist_token_to_cookies(
+                    account['email'],
+                    session_data,
+                    current_cookies
+                )
+                
+                # Update cookie manager with new token
+                cookie_manager.update_cookies(
+                    account['email'],
+                    current_cookies,
+                    session_data.expires.isoformat()
+                )
+                
+                bearer_token = session_data.access_token
+                logger.info(f"✅ Access token fetched for {account['email']}")
+                
+            except Exception as e:
+                logger.error(f"Failed to fetch access token for {account['email']}: {e}")
+                raise RuntimeError(f"Failed to fetch access token: {e}") from e
+        
+        return CookieCredentials(
+            cookies=current_cookies,
+            bearer_token=bearer_token
+        )
 
     async def _post(
         self, url: str, payload: Dict[str, Any], credentials: CookieCredentials

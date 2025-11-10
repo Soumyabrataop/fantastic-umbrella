@@ -31,14 +31,23 @@ class Settings:
     supabase_anon_key: str
     supabase_service_role_key: str | None
     database_url: str
-    media_storage_backend: str
-    media_root: Path
-    media_public_base: str
+    media_root: Path  # Temp directory for Flow API downloads
     # Google OAuth & Drive
     google_client_id: str
     google_client_secret: str
     google_redirect_uri: str
     google_drive_folder_name: str
+    # Multi-account support for Flow API
+    google_emails: list[str]
+    google_passwords: list[str]
+    # Playwright/Browser automation
+    playwright_headless: bool
+    # Cloudflare R2
+    r2_endpoint_url: str
+    r2_access_key_id: str
+    r2_secret_access_key: str
+    r2_bucket_name: str
+    r2_public_url: str
     # Security
     request_signature_secret: str | None
     request_signature_header: str
@@ -73,15 +82,9 @@ def get_settings() -> Settings:
         or "postgresql+asyncpg://postgres:Mihir0209@localhost:5432/zappdb"
     )
 
-    media_backend = os.environ.get("MEDIA_STORAGE_BACKEND", "drive").strip().lower() or "drive"
-    media_root_raw = os.environ.get("MEDIA_ROOT") or str(BASE_DIR / "media")
-    media_root = Path(media_root_raw).resolve()
-    if media_backend == "local":
-        media_root.mkdir(parents=True, exist_ok=True)
-
-    media_public_base = os.environ.get("MEDIA_PUBLIC_BASE", "/media").strip() or "/media"
-    if not media_public_base.startswith("/") and not media_public_base.startswith("http"):
-        media_public_base = f"/{media_public_base}"
+    # Temp directory for downloading from Flow API before uploading to Google Drive
+    media_root = Path(os.environ.get("MEDIA_ROOT") or str(BASE_DIR / "media")).resolve()
+    media_root.mkdir(parents=True, exist_ok=True)
 
     request_signature_secret = os.environ.get("REQUEST_SIGNATURE_SECRET")
     request_signature_header = os.environ.get("REQUEST_SIGNATURE_HEADER", "x-instaveo-signature").lower()
@@ -97,6 +100,19 @@ def get_settings() -> Settings:
             raise RuntimeError(f"{name} must be an integer") from exc
         return max(value, minimum)
 
+    # Parse multi-account credentials
+    emails_str = _get_env("GOOGLE_EMAILS")
+    passwords_str = _get_env("GOOGLE_PASSWORDS")
+    
+    emails = [email.strip() for email in emails_str.split(",") if email.strip()]
+    passwords = [pwd.strip() for pwd in passwords_str.split(",") if pwd.strip()]
+    
+    if len(emails) != len(passwords):
+        raise RuntimeError(f"Account mismatch: {len(emails)} emails but {len(passwords)} passwords")
+    
+    if not emails:
+        raise RuntimeError("No Google accounts configured in GOOGLE_EMAILS")
+
     return Settings(
         flow_generate_url=_get_env("FLOW_API_GENERATE_URL"),
         flow_status_url=_get_env("FLOW_API_STATUS_URL"),
@@ -110,14 +126,23 @@ def get_settings() -> Settings:
         supabase_anon_key=supabase_anon_key,
         supabase_service_role_key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
         database_url=database_url,
-        media_storage_backend=media_backend,
-        media_root=media_root,
-        media_public_base=media_public_base.rstrip("/"),
+        media_root=media_root,  # Temp directory for Flow API downloads
         # Google OAuth & Drive
         google_client_id=_get_env("GOOGLE_CLIENT_ID"),
         google_client_secret=_get_env("GOOGLE_CLIENT_SECRET"),
         google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"),
         google_drive_folder_name=os.environ.get("GOOGLE_DRIVE_FOLDER_NAME", "InstaVEO Videos"),
+        # Multi-account support
+        google_emails=emails,
+        google_passwords=passwords,
+        # Playwright/Browser automation (default: true = headless, false = show browser)
+        playwright_headless=os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() in ("true", "1", "yes"),
+        # Cloudflare R2
+        r2_endpoint_url=os.environ.get("R2_ENDPOINT_URL", ""),
+        r2_access_key_id=os.environ.get("R2_ACCESS_KEY_ID", ""),
+        r2_secret_access_key=os.environ.get("R2_SECRET_ACCESS_KEY", ""),
+        r2_bucket_name=os.environ.get("R2_BUCKET_NAME", "instaveo-videos"),
+        r2_public_url=os.environ.get("R2_PUBLIC_URL", ""),
         # Security
         request_signature_secret=request_signature_secret,
         request_signature_header=request_signature_header,

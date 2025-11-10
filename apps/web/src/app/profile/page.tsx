@@ -254,12 +254,13 @@ export default function ProfilePage() {
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {videos.map((video) => (
                 <VideoCard
                   key={video.id}
                   video={video}
-                  onRecreate={handleRecreate}
+                  horizontal={true}
+                  showActions={false}
                 />
               ))}
             </div>

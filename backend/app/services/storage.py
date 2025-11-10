@@ -79,59 +79,30 @@ class StorageService:
             return
 
         settings = self._settings_override or get_settings()
-        backend = settings.media_storage_backend
         
-        # Get Drive service for the video owner
-        drive_service = None
-        if backend == "drive":
-            drive_service = await self.get_drive_service_for_user(session, video.user_id)
-            if not drive_service:
-                logger.warning(f"Drive backend selected but user {video.user_id} has no OAuth tokens, falling back to local")
-                backend = "local"
+        # ONLY use Google Drive - no fallback to local storage
+        drive_service = await self.get_drive_service_for_user(session, video.user_id)
+        if not drive_service:
+            raise RuntimeError(
+                f"User {video.user_id} must sign in with Google to upload videos. "
+                f"Google Drive OAuth tokens are required - no local storage fallback."
+            )
 
         if update.video_url:
-            try:
-                asset = await self._upsert_asset(
-                    session=session,
-                    video=video,
-                    asset_type=AssetType.VIDEO,
-                    source_url=update.video_url,
-                    backend=backend,
-                    settings=settings,
-                    duration_seconds=update.duration_seconds,
-                    drive_service=drive_service,
-                )
-                # Store Drive file ID and URL
-                if backend == "drive" and asset.storage_key:
-                    video.google_drive_file_id = asset.storage_key
-                    video.video_url = asset.public_url or ""
-                    logger.info(f"Uploaded video to Drive for video {video.id}, file_id={asset.storage_key}")
-                elif asset.public_url:
-                    video.video_url = asset.public_url
-                elif asset.file_path:
-                    video.video_url = asset.file_path
-            except Exception as e:
-                logger.error(f"Failed to process video asset for video {video.id}: {e}", exc_info=True)
-                # If Drive fails, try falling back to local storage
-                if backend == "drive":
-                    logger.warning(f"Attempting fallback to local storage for video {video.id}")
-                    try:
-                        asset = await self._upsert_asset(
-                            session=session,
-                            video=video,
-                            asset_type=AssetType.VIDEO,
-                            source_url=update.video_url,
-                            backend="local",
-                            settings=settings,
-                            duration_seconds=update.duration_seconds,
-                        )
-                        video.video_url = asset.public_url or asset.file_path or ""
-                        logger.info(f"Successfully fell back to local storage for video {video.id}")
-                    except Exception as fallback_error:
-                        logger.error(f"Fallback to local storage also failed for video {video.id}: {fallback_error}", exc_info=True)
-                        raise RuntimeError(f"Failed to store video asset: {e}") from e
-                else:
-                    raise RuntimeError(f"Failed to store video asset: {e}") from e
+            asset = await self._upsert_asset(
+                session=session,
+                video=video,
+                asset_type=AssetType.VIDEO,
+                source_url=update.video_url,
+                backend="drive",
+                settings=settings,
+                duration_seconds=update.duration_seconds,
+                drive_service=drive_service,
+            )
+            # Store Drive file ID and URL (temporary storage)
+            video.google_drive_file_id = asset.storage_key
+            video.video_url = asset.public_url or ""
+            logger.info(f"Uploaded video to Google Drive (temporary) for video {video.id}, file_id={asset.storage_key}")
 
         if update.thumbnail_url:
             try:
@@ -140,19 +111,14 @@ class StorageService:
                     video=video,
                     asset_type=AssetType.THUMBNAIL,
                     source_url=update.thumbnail_url,
-                    backend=backend,
+                    backend="drive",
                     settings=settings,
                     drive_service=drive_service,
                 )
-                # Store Drive thumbnail ID and URL
-                if backend == "drive" and asset.storage_key:
-                    video.google_drive_thumbnail_id = asset.storage_key
-                    video.thumbnail_url = asset.public_url or ""
-                    logger.info(f"Uploaded thumbnail to Drive for video {video.id}, file_id={asset.storage_key}")
-                elif asset.public_url:
-                    video.thumbnail_url = asset.public_url
-                elif asset.file_path:
-                    video.thumbnail_url = asset.file_path
+                # Store Drive thumbnail ID and URL (temporary storage)
+                video.google_drive_thumbnail_id = asset.storage_key
+                video.thumbnail_url = asset.public_url or ""
+                logger.info(f"Uploaded thumbnail to Google Drive (temporary) for video {video.id}, file_id={asset.storage_key}")
             except Exception as e:
                 logger.error(f"Failed to process thumbnail asset for video {video.id}: {e}", exc_info=True)
                 # Thumbnail is not critical, log but don't fail the entire operation
@@ -176,17 +142,18 @@ class StorageService:
         result = await session.execute(stmt)
         asset = result.scalar_one_or_none()
 
-        stored: StoredMedia
-        if backend == "drive":
-            if not drive_service:
-                raise RuntimeError("Drive backend selected but no Drive service provided")
-            stored = await self._upload_to_drive(video.id, asset_type, source_url, settings, drive_service, is_published=video.is_published)
-        elif backend == "local":
-            stored = await self._download_to_local(video.id, asset_type, source_url, settings)
-        else:
-            # Unknown backend, store source URL as fallback
-            logger.warning(f"Unknown storage backend '{backend}', using source URL as fallback")
-            stored = StoredMedia(storage_key=source_url, file_path=None, public_url=source_url)
+        # ONLY Google Drive - no local storage fallback
+        if not drive_service:
+            raise RuntimeError("Google Drive service is required - no fallback storage available")
+        
+        stored = await self._upload_to_drive(
+            video.id, 
+            asset_type, 
+            source_url, 
+            settings, 
+            drive_service, 
+            is_published=video.is_published
+        )
 
         if asset is None:
             asset = VideoAsset(video_id=video.id, asset_type=asset_type)
@@ -285,39 +252,50 @@ class StorageService:
             logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
 
-    async def _download_to_local(
-        self,
-        video_id: uuid.UUID,
-        asset_type: AssetType,
-        source_url: str,
-        settings: Settings,
-    ) -> StoredMedia:
-        """
-        Download asset from Flow API and save to local filesystem.
-        """
-        video_id_str = str(video_id)
-        filename = self._build_filename(video_id_str, asset_type, source_url)
-        destination = settings.media_root / filename
-
-        if not destination.exists():
-            try:
-                logger.info(f"Downloading {asset_type.value} asset for video {video_id} from Flow API: {source_url}")
-                async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-                    response = await client.get(source_url)
-                response.raise_for_status()
-                data = response.content
-                logger.info(f"Downloaded {len(data)} bytes for video {video_id} ({asset_type.value})")
-                
-                logger.info(f"Writing {asset_type.value} to local file: {destination}")
-                await asyncio.to_thread(self._write_file, destination, data)
-                logger.info(f"Successfully saved {asset_type.value} to local storage for video {video_id}")
-            except Exception as e:
-                error_msg = f"Failed to download {asset_type.value} for video {video_id}: {e}"
-                logger.error(error_msg, exc_info=True)
-                raise RuntimeError(error_msg) from e
-
-        public_url = self._build_public_url(settings.media_public_base, filename)
-        return StoredMedia(storage_key=filename, file_path=str(destination), public_url=public_url)
+    async def upload_video_to_r2(self, session: AsyncSession, video: Video) -> None:
+        """Upload video from Google Drive to R2 for publishing"""
+        from app.services.r2_storage import R2StorageService
+        
+        if not video.google_drive_file_id:
+            raise ValueError("Video has no Google Drive file ID")
+        
+        # Get Drive service to download the video
+        drive_service = await self.get_drive_service_for_user(session, video.user_id)
+        if not drive_service:
+            raise RuntimeError(f"Cannot access Google Drive for user {video.user_id}")
+        
+        try:
+            # Download video from Google Drive
+            logger.info(f"Downloading video {video.id} from Drive: {video.google_drive_file_id}")
+            video_bytes = await asyncio.to_thread(
+                drive_service.download_file,
+                video.google_drive_file_id
+            )
+            
+            # Upload to R2
+            r2_service = R2StorageService()
+            object_key = f"videos/{video.id}.mp4"
+            
+            logger.info(f"Uploading video {video.id} to R2...")
+            public_url = await r2_service.upload_from_bytes(
+                video_bytes,
+                object_key,
+                content_type="video/mp4"
+            )
+            
+            if not public_url:
+                raise RuntimeError("Failed to upload video to R2")
+            
+            # Update video with R2 URL
+            video.r2_video_url = public_url
+            video.r2_object_key = object_key
+            video.video_url = public_url
+            
+            logger.info(f"Video {video.id} published to R2: {public_url}")
+            
+        except Exception as e:
+            logger.error(f"Failed to upload video {video.id} to R2: {e}")
+            raise
 
     @staticmethod
     def _build_filename(video_id: str, asset_type: AssetType, source_url: str) -> str:

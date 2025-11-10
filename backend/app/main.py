@@ -1,3 +1,16 @@
+"""
+ZappAI Backend - FastAPI Application
+
+Storage Architecture:
+- Temporary: Google Drive (videos after generation, before publish)
+- Permanent: Cloudflare R2 (videos after user clicks publish)
+- No local filesystem fallback - Google OAuth required
+
+Multi-Account System:
+- Supports multiple Google accounts for Flow API load balancing
+- Automatic rotation and failover on account failures
+- Cookie management per account with health tracking
+"""
 from __future__ import annotations
 
 import asyncio
@@ -6,14 +19,12 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import flow_client, router, storage_service
 from app.api.auth_routes import router as auth_router
 from app.core.settings import get_settings
 from app.db.session import get_session_factory, init_database
-from app.services.cookie_refresher import CookieRefresher
-from app.services.token_refresher import CookieExpiredError, SessionData, TokenRefresher, seconds_until_expiry
+from app.services.multi_account_refresher import MultiAccountRefresher
 from app.services.video_queue import VideoQueue
 
 logger = logging.getLogger("uvicorn.error").getChild("lifespan")
@@ -22,102 +33,31 @@ logger = logging.getLogger("uvicorn.error").getChild("lifespan")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    refresher = TokenRefresher(settings)
-    cookie_refresher = CookieRefresher(settings)
-    stop_event = asyncio.Event()
     session_factory = get_session_factory()
     video_queue = VideoQueue(session_factory, flow_client=flow_client, storage_service=storage_service, settings=settings)
+    
+    # Initialize multi-account cookie refresher
+    account_refresher = MultiAccountRefresher(settings)
 
-    async def refresh_loop() -> None:
-        session: SessionData | None = None
-        consecutive_cookie_failures = 0
-        
-        while not stop_event.is_set():
-            delay = 120.0
-            try:
-                session = await refresher.fetch_session()
-                refresher.persist_token(session)
-                delay = seconds_until_expiry(session, settings.token_refresh_margin_seconds)
-                delay = max(delay, 60.0)
-                consecutive_cookie_failures = 0  # Reset failure counter on success
-                logger.info("Token refreshed; next refresh in %.0f seconds", delay)
-                
-            except CookieExpiredError as exc:
-                # Cookies are expired - trigger immediate full refresh
-                logger.error("❌ Cookies expired: %s", exc)
-                logger.info("🔄 Triggering immediate full cookie refresh...")
-                
-                try:
-                    await cookie_refresher.refresh_now()
-                    logger.info("✅ Cookie refresh successful - will retry token refresh in 10 seconds")
-                    delay = 10.0  # Retry token refresh shortly after cookie refresh
-                    consecutive_cookie_failures = 0
-                except Exception as refresh_exc:
-                    consecutive_cookie_failures += 1
-                    logger.error("❌ Cookie refresh failed (%s) - attempt %d", refresh_exc, consecutive_cookie_failures)
-                    
-                    # Exponential backoff for cookie refresh failures (max 1 hour)
-                    delay = min(60.0 * (2 ** consecutive_cookie_failures), 3600.0)
-                    logger.warning("⏳ Retrying in %.0f seconds", delay)
-            
-            except (FileNotFoundError, ValueError) as exc:
-                # Cookie file missing or invalid - trigger immediate full refresh
-                error_msg = str(exc)
-                logger.error("❌ Cookie file issue: %s", error_msg)
-                logger.info("🔄 Triggering immediate full cookie refresh to create/fix cookie.json...")
-                
-                try:
-                    await cookie_refresher.refresh_now()
-                    logger.info("✅ Cookie refresh successful - will retry token refresh in 10 seconds")
-                    delay = 10.0  # Retry token refresh shortly after cookie refresh
-                    consecutive_cookie_failures = 0
-                except Exception as refresh_exc:
-                    consecutive_cookie_failures += 1
-                    logger.error("❌ Cookie refresh failed (%s) - attempt %d", refresh_exc, consecutive_cookie_failures)
-                    
-                    # Exponential backoff for cookie refresh failures (max 1 hour)
-                    delay = min(60.0 * (2 ** consecutive_cookie_failures), 3600.0)
-                    logger.warning("⏳ Retrying in %.0f seconds", delay)
-                    
-            except Exception as exc:  # noqa: BLE001 - want to log any failure
-                logger.warning("Token refresh failed (%s); retrying in %s seconds", exc, delay)
-                
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=delay)
-            except asyncio.TimeoutError:
-                continue
-
-    refresh_task = asyncio.create_task(refresh_loop(), name="token-refresh")
     try:
         await init_database()
         
-        # Check if cookie.json exists on startup
-        if not settings.flow_cookie_file.exists():
-            logger.warning("⚠️  cookie.json not found on startup!")
-            logger.info("🔄 Running initial cookie refresh to create cookie.json...")
-            try:
-                await cookie_refresher.refresh_now()
-                logger.info("✅ Initial cookie refresh successful")
-            except Exception as exc:
-                logger.error("❌ Initial cookie refresh failed: %s", exc)
-                logger.warning("⚠️  Backend will retry periodically via token refresh loop")
+        # Start multi-account cookie refresher
+        await account_refresher.start()
+        logger.info(f"✅ Multi-account refresher started for {len(settings.google_emails)} accounts")
         
         # Start the video queue worker
         await video_queue.start()
         logger.info("Video queue worker started")
         app.state.video_queue = video_queue
-        
-        # Optionally start 21-hour cookie refresh loop
-        # await cookie_refresher.start()
+        app.state.account_refresher = account_refresher
         
         yield
     finally:
-        stop_event.set()
-        await cookie_refresher.stop()  # Stop cookie refresh loop
+        # Cleanup
+        await account_refresher.stop()
         await video_queue.stop()
-        refresh_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await refresh_task
+        logger.info("Application shutdown complete")
 
 
 app = FastAPI(title="Flow Veo3 Proxy", version="0.2.0", lifespan=lifespan)
@@ -139,9 +79,4 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(auth_router)  # Add Google OAuth routes
 
-settings = get_settings()
-if settings.media_storage_backend == "local":
-    mount_path = settings.media_public_base or "/media"
-    if not mount_path.startswith("/"):
-        mount_path = f"/{mount_path}"
-    app.mount(mount_path, StaticFiles(directory=settings.media_root, check_dir=True), name="media")
+# No local media mounting - using Google Drive + Cloudflare R2 only

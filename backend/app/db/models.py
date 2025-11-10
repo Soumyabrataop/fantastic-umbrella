@@ -80,6 +80,8 @@ class Video(Base, TimestampMixin):
     is_published: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     google_drive_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     google_drive_thumbnail_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    r2_video_url: Mapped[str | None] = mapped_column(String(512), nullable=True)  # Cloudflare R2 URL for published videos
+    r2_object_key: Mapped[str | None] = mapped_column(String(255), nullable=True)  # R2 object key for deletion
     likes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dislikes_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     views_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -98,7 +100,6 @@ class Video(Base, TimestampMixin):
     )
 
     reactions: Mapped[list["VideoReaction"]] = relationship(back_populates="video", cascade="all, delete-orphan")
-    views: Mapped[list["VideoView"]] = relationship(back_populates="video", cascade="all, delete-orphan")
     creator: Mapped["Profile | None"] = relationship(
         "Profile",
         back_populates="videos",
@@ -134,22 +135,6 @@ class VideoReaction(Base, TimestampMixin):
     video: Mapped[Video] = relationship(back_populates="reactions")
 
 
-class VideoView(Base, TimestampMixin):
-    __tablename__ = "video_views"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    video_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("videos.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
-    session_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    video: Mapped[Video] = relationship(back_populates="views")
-
-
 class Profile(Base, TimestampMixin):
     __tablename__ = "profiles"
 
@@ -162,6 +147,7 @@ class Profile(Base, TimestampMixin):
     videos_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_likes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_dislikes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enterprise: Mapped[bool] = mapped_column(nullable=False, default=False, server_default="false")
     # Google OAuth tokens
     google_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
