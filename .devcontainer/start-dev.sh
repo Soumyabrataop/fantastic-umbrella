@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # This path MUST match your 'workspaceFolder' in devcontainer.json
-ROOT="/workspaces/fantastic-umbrella"
+ROOT="/workspaces/Zappai"
 LOG_DIR="$ROOT/.devcontainer"
 mkdir -p "$LOG_DIR"
 
